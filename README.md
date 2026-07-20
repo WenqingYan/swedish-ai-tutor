@@ -1,0 +1,477 @@
+# Swedish AI Tutor 🇸🇪
+
+AI-assisted Swedish language acquisition system for SFI C/D learners. Transforms daily [Radio Sweden på lätt svenska](https://sverigesradio.se/radioswedenpalattsvenska) episodes into structured learning material, delivered as a Notion page every morning. Includes a local vocabulary database with spaced repetition review.
+
+## What it does
+
+Every weekday morning, this system:
+
+1. **Fetches** yesterday's episode from Sveriges Radio (Radio Sweden på lätt svenska)
+2. **Downloads** the audio (MP3, ~9–11 min, 4 news stories)
+3. **Transcribes** the audio to Swedish text via OpenAI Whisper
+4. **Splits** the transcript into individual news stories
+5. **Analyzes** each sentence with GPT-4o (grammar, phrases, vocabulary, morphology)
+6. **Saves** all vocabulary to a local SQLite database (frequency + review scheduling)
+7. **Creates** a structured Notion page with the day's lesson
+8. **Tracks** processed episodes (deduplication)
+
+Each word in the Notion page links to [svenska.se](https://svenska.se) for dictionary lookup.
+
+You can then **review** learned vocabulary using built-in terminal flashcards with spaced repetition (SM-2 algorithm).
+
+---
+
+## Commands
+
+### `run` — Daily lesson pipeline
+
+Fetches yesterday's episode and creates a Notion lesson page.
+
+```bash
+# Activate virtual environment first
+source .venv/bin/activate
+
+# Process all news stories from yesterday's episode
+python -m swedish_ai_tutor run
+
+# Only analyze 2 randomly chosen stories (saves cost + time)
+python -m swedish_ai_tutor run --news 2
+
+# Only 1 story for a quick daily lesson
+python -m swedish_ai_tutor run --news 1
+```
+
+### `review` — Flashcard review session
+
+Start an interactive spaced repetition review in the terminal.
+
+```bash
+python -m swedish_ai_tutor review          # default: 20 words
+python -m swedish_ai_tutor review -n 10    # only 10 words
+python -m swedish_ai_tutor review -n 50    # longer session
+```
+
+Shows words due for review + up to 5 new words per session:
+
+```
+── 1/12 ──
+  🇸🇪 utreda [verb]
+  (press Enter to reveal)
+  🇨🇳 调查
+  📝 verb (gr.2): utreda / utreder / utredde / utrett
+  📊 freq=3 | interval=6d
+  Rate [a/h/g/e/q]: g
+```
+
+Rating shortcuts:
+- **a** (again) = forgot completely → reset to 1 day
+- **h** (hard) = struggled → shorter interval
+- **g** (good) = recalled correctly → grow interval
+- **e** (easy) = instant recall → grow interval faster
+- **q** = quit session
+
+### `vocab` — Show vocabulary statistics
+
+```bash
+python -m swedish_ai_tutor vocab
+```
+
+```
+   📚 Vocabulary Database
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Category         ┃ Count ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ Total words      │   323 │
+│ New (unreviewed) │   280 │
+│ Learning         │    43 │
+│ Mastered         │     0 │
+│ Due for review   │    12 │
+└──────────────────┴───────┘
+```
+
+### `add-word` — Manually add vocabulary
+
+Add words you encounter outside the daily pipeline.
+
+```bash
+# With POS and meaning
+python -m swedish_ai_tutor add-word "utreda" verb "调查"
+
+# Just the word (fill in details later)
+python -m swedish_ai_tutor add-word "samhälle"
+```
+
+### `rebuild-vocab` — Recheck local lessons and repopulate vocabulary
+
+Reconciles every vocabulary entry in `data/lessons/lesson_*.json` into the
+SQLite database. It makes no OpenAI or Notion calls, preserves existing review
+progress and manual-only words, and creates a timestamped database backup first.
+
+```bash
+python -m swedish_ai_tutor rebuild-vocab
+```
+
+### `dry-run` — Test Notion integration (no OpenAI cost)
+
+Creates a Notion page with realistic mock data. Use this to verify your Notion setup.
+
+```bash
+python -m swedish_ai_tutor dry-run
+```
+
+---
+
+## Setup
+
+### Prerequisites
+
+- Python 3.11+
+- macOS or Linux (Windows WSL is also supported)
+- OpenAI account with billing enabled
+- Notion account
+
+### 1. Install
+
+```bash
+cd swedish_learning_assistant
+
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install the project
+pip install -e ".[dev]"
+```
+
+On macOS, Python 3.11+ is required (the Apple-provided Python may be older). The
+included setup script locates Python 3.11, 3.12, or 3.13 and creates the virtual
+environment:
+
+```bash
+brew install python@3.12   # only if Python 3.11+ is not already installed
+./scripts/setup_macos.sh
+source .venv/bin/activate
+```
+
+### 2. Get API Keys
+
+#### OpenAI API Key
+
+1. Go to [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+2. Create a new secret key (starts with `sk-`)
+3. Make sure billing is enabled on your account
+
+#### Notion Integration
+
+1. Go to [notion.so/my-integrations](https://www.notion.so/my-integrations)
+2. Click **New integration**
+3. Name it "Swedish AI Tutor", select your workspace
+4. Copy the **Internal Integration Secret** (starts with `secret_`)
+
+#### Notion Parent Page ID
+
+1. Create a page in Notion (e.g., "Swedish Learning")
+2. Share it with your integration: **...** → **Connections** → find your integration → **Connect**
+3. Copy the page ID from the URL:
+   ```
+   https://www.notion.so/My-Page-abc123def456ghi789jkl012mno345pq
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                    This 32-character hex string is your page ID
+   ```
+
+### 3. Configure
+
+Create your `.env` file:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your real keys:
+
+```env
+OPENAI_API_KEY=sk-proj-your-actual-key
+NOTION_API_KEY=secret_your-actual-token
+NOTION_PARENT_PAGE_ID=your-32-char-hex-id
+```
+
+### 4. Test
+
+```bash
+# Test Notion connection (free, no OpenAI calls)
+python -m swedish_ai_tutor dry-run
+```
+
+Check the created page in Notion. If it looks good, you're ready.
+
+### 5. Run
+
+```bash
+# Full pipeline (costs ~$0.05-0.15 per run with gpt-4o-mini)
+python -m swedish_ai_tutor run
+
+# Or limit to 2 stories
+python -m swedish_ai_tutor run --news 2
+```
+
+---
+
+## Automate
+
+### macOS (launchd)
+
+macOS uses a per-user LaunchAgent for reliable scheduled execution:
+
+```bash
+./scripts/setup_launchd.sh
+```
+
+This runs at 07:00 Monday-Friday. Logs are written to
+`data/logs/launchd.log` and `data/logs/launchd-error.log`.
+
+### Linux / WSL (cron)
+
+Run the pipeline every weekday morning at 07:00 automatically:
+
+```bash
+chmod +x scripts/setup_cron.sh
+./scripts/setup_cron.sh
+```
+
+This installs a cron job. To verify:
+```bash
+crontab -l
+```
+
+To remove:
+```bash
+crontab -l | grep -v 'swedish_ai_tutor' | crontab -
+```
+
+Logs are saved to `./data/logs/pipeline_YYYY-MM-DD.log`.
+
+---
+
+## Vocabulary & Review System
+
+### How it works
+
+1. **Automatic collection** — every `run` saves all analyzed words to the local SQLite database
+2. **Frequency tracking** — words encountered again get frequency +1 and updated `last_seen`
+3. **Spaced repetition (SM-2)** — each word has a review schedule that grows with successful recalls:
+   - New word → review in 1 day
+   - 1st success → 6 days
+   - 2nd success → 15 days
+   - Continues growing: 35 → 90 → 200+ days
+   - Failed → reset to 1 day
+4. **Auto-mastery** — words with interval > 30 days and high ease factor are marked as mastered
+
+### Daily workflow
+
+```bash
+# Morning: get new lesson (auto-populates vocabulary DB)
+python -m swedish_ai_tutor run --news 2
+
+# Anytime: review due words (5-10 min)
+python -m swedish_ai_tutor review
+
+# Check progress
+python -m swedish_ai_tutor vocab
+```
+
+### Database location
+
+The vocabulary database is stored locally at `./data/vocabulary.db` (SQLite). It tracks:
+
+- Word, POS, Chinese meaning
+- Full morphology (verb/noun/adjective forms as JSON)
+- Frequency count (how many times encountered across episodes)
+- First seen / last seen dates
+- SM-2 state: ease factor, interval, repetitions, next review date
+- Source episode IDs
+- Mastered flag
+
+---
+
+## Configuration Reference
+
+All settings go in `.env`. Only the first 3 are required:
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `OPENAI_API_KEY` | ✅ | — | OpenAI API key for Whisper + GPT |
+| `NOTION_API_KEY` | ✅ | — | Notion integration token |
+| `NOTION_PARENT_PAGE_ID` | ✅ | — | Notion page to create lessons under |
+| `OPENAI_MODEL` | — | `gpt-4o` | LLM model (`gpt-4o-mini` for 15x cheaper) |
+| `WHISPER_MODEL` | — | `whisper-1` | Whisper model for transcription |
+| `SR_PROGRAM_ID` | — | `4916` | SR program (4916 = Radio Sweden lätt svenska) |
+| `MAX_NEWS` | — | `0` | Max stories per lesson (0 = all, 1-4 = random pick) |
+| `DATA_DIR` | — | `./data` | Local data directory |
+| `DB_PATH` | — | `./data/vocabulary.db` | SQLite database path |
+| `LOG_LEVEL` | — | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
+
+---
+
+## Notion Page Format
+
+Each daily lesson page contains:
+
+```
+📖 2026-07-13 — Lätt svenska
+├── 📻 Episode info (date, duration, clickable audio link)
+├── 📝 Description
+├── ───────────────
+├── 📰 1. Den kritiserade informationsplikten införs
+│   ├── [Toggle] 1. Sentence analysis...
+│   │   ├── 💬 Chinese translation
+│   │   ├── 语法: Grammar pattern + explanation
+│   │   ├── 🎓 SFI relevance note
+│   │   ├── 短语: Phrases with examples
+│   │   ├── 词汇: Vocabulary (linked to svenska.se)
+│   │   └── 例句: Example sentence + Chinese translation
+│   └── [Toggle] 2. ...
+├── ───────────────
+├── 📰 2. Mammor får skydd mot våld men inte barnen
+│   └── ...
+├── ───────────────
+└── 📊 Dagens nya ord (vocabulary summary with svenska.se links)
+```
+
+---
+
+## Cost
+
+| Component | Cost per episode (gpt-4o-mini) | Cost (gpt-4o) |
+|-----------|-------------------------------|---------------|
+| Whisper transcription | ~$0.06 | ~$0.06 |
+| LLM analysis (batch mode) | ~$0.01–0.03 | ~$0.10–0.30 |
+| **Total (all 4 stories)** | **~$0.07–0.09/day** | **~$0.16–0.36/day** |
+| **Total (2 stories)** | **~$0.04–0.05/day** | **~$0.08–0.18/day** |
+
+Recommended: set `OPENAI_MODEL=gpt-4o-mini` in `.env` for daily use.
+
+---
+
+## Project Structure
+
+```
+swedish_learning_assistant/
+├── .env                         # Your API keys (not committed)
+├── .env.example                 # Template with placeholder values
+├── pyproject.toml               # Dependencies and project config
+├── scripts/
+│   └── setup_cron.sh           # Cron automation setup
+├── data/                        # Runtime data (not committed)
+│   ├── audio/                   # Downloaded MP3 files
+│   ├── lessons/                 # Saved lesson JSON (debug/fallback)
+│   ├── logs/                    # Pipeline execution logs
+│   └── vocabulary.db            # SQLite vocabulary database
+├── src/swedish_ai_tutor/
+│   ├── main.py                  # CLI entry point (run, review, vocab, add-word)
+│   ├── __main__.py              # python -m support
+│   ├── config.py                # Pydantic settings from .env
+│   ├── dry_run.py               # Mock pipeline for testing Notion
+│   ├── models/
+│   │   ├── episode.py           # SR episode metadata
+│   │   ├── transcript.py        # Audio transcription + sentence split
+│   │   └── lesson.py            # Lesson, NewsStory, SentenceAnalysis models
+│   ├── services/
+│   │   ├── sr_fetcher.py        # SR Open API client
+│   │   ├── transcriber.py       # Whisper API (Protocol interface)
+│   │   ├── sentence_analyzer.py # LLM analysis (batch mode)
+│   │   ├── vocabulary_service.py # Word upsert, frequency, review logic
+│   │   └── pipeline.py          # Full pipeline orchestrator
+│   ├── exporters/
+│   │   └── notion_exporter.py   # Lesson → Notion page with blocks
+│   ├── db/
+│   │   ├── engine.py            # SQLite engine + session factory
+│   │   ├── tables.py            # SQLAlchemy table definitions
+│   │   └── repositories/
+│   │       ├── article_repo.py  # Episode deduplication
+│   │       └── word_repo.py     # Vocabulary CRUD + review queries
+│   ├── prompts/
+│   │   └── v1/
+│   │       ├── sentence_analysis.txt       # Single sentence prompt
+│   │       └── batch_sentence_analysis.txt # Batch prompt (token-efficient)
+│   └── review/
+│       ├── scheduler.py         # SM-2 spaced repetition algorithm
+│       └── session.py           # CLI flashcard review interface
+└── tests/                       # 90 unit tests
+    ├── test_config.py
+    ├── test_models.py
+    ├── test_database.py
+    ├── test_sr_fetcher.py
+    ├── test_transcriber.py
+    ├── test_prompts.py
+    ├── test_sentence_analyzer.py
+    ├── test_notion_exporter.py
+    └── test_vocabulary.py
+```
+
+---
+
+## Development
+
+```bash
+# Activate venv
+source .venv/bin/activate
+
+# Run all checks (linter + types + tests)
+ruff check . && mypy src/ && pytest
+
+# Run tests only
+pytest
+
+# Run tests with verbose output
+pytest -v
+
+# Run a specific test file
+pytest tests/test_vocabulary.py
+
+# Lint and auto-fix
+ruff check --fix .
+```
+
+---
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| `No module named swedish_ai_tutor` | Activate the venv: `source .venv/bin/activate` |
+| `Configuration error` | Check `.env` file exists with all required keys |
+| Notion page not created | Run `dry-run` first. Check page is shared with integration |
+| `Episode already processed` | Delete `data/vocabulary.db` to reprocess |
+| Weekend — no episode | Normal. Episodes only published Mon-Fri |
+| OpenAI rate limit | Wait 1 minute and retry. Pipeline has built-in 3x retry |
+| High cost | Use `--news 1` or `OPENAI_MODEL=gpt-4o-mini` in `.env` |
+| Review shows 0 due | New words become due after 1 day. Check back tomorrow |
+
+---
+
+## Source
+
+**Radio Sweden på lätt svenska** (SR Program ID: 4916)
+- URL: [sverigesradio.se/radioswedenpalattsvenska](https://sverigesradio.se/radioswedenpalattsvenska)
+- Schedule: Weekdays (Mon-Fri)
+- Format: ~9-11 min audio, 4 news stories per episode
+- Target: Immigrants learning Swedish
+- API: `https://api.sr.se/api/v2/episodes/index?programid=4916&format=json`
+
+---
+
+## Roadmap
+
+- [x] v1: Daily lesson pipeline (SR → Whisper → GPT → Notion)
+- [x] News story selection (`--news N` for controlling daily workload)
+- [x] News stories with topic headings (visual separation)
+- [x] Dictionary links (svenska.se for every word)
+- [x] Dry-run mode (test Notion without API cost)
+- [x] Batch analysis mode (6 sentences per API call, ~70% token savings)
+- [x] v2: Vocabulary database + spaced repetition review (SM-2)
+- [x] CLI flashcard review (`review` command)
+- [x] Manual word addition (`add-word` command)
+- [x] Vocabulary statistics (`vocab` command)
+- [ ] v3: Grammar pattern tracking across lessons
+- [ ] v4: SFI exercise generation
+- [ ] Notion vocabulary database sync
