@@ -32,6 +32,8 @@ def main() -> None:
         _run_review()
     elif command == "vocab":
         _show_vocab()
+    elif command == "web":
+        _run_web()
     elif command == "rebuild-vocab":
         _rebuild_vocab()
     elif command == "add-word":
@@ -102,6 +104,7 @@ def _run_review() -> None:
 
     # Parse --count N flag (default 20)
     max_words = 20
+    username = None
     for i, arg in enumerate(sys.argv):
         if arg in ("--count", "-n") and i + 1 < len(sys.argv):
             try:
@@ -109,10 +112,12 @@ def _run_review() -> None:
             except ValueError:
                 print(f"Error: --count requires a number, got '{sys.argv[i + 1]}'")
                 sys.exit(1)
+        if arg == "--user" and i + 1 < len(sys.argv):
+            username = sys.argv[i + 1].strip().lower()
 
     from swedish_ai_tutor.review.session import run_review_session
 
-    run_review_session(settings, max_words=max_words)
+    run_review_session(settings, max_words=max_words, username=username)
 
 
 def _show_vocab() -> None:
@@ -126,6 +131,36 @@ def _show_vocab() -> None:
     from swedish_ai_tutor.review.session import show_vocab_stats
 
     show_vocab_stats(settings)
+
+
+def _run_web() -> None:
+    """Start the private mobile vocabulary review web app."""
+    try:
+        settings = get_settings()
+    except Exception as e:
+        print(f"Configuration error: {e}")
+        sys.exit(1)
+
+    host = "127.0.0.1"
+    port = 8000
+    for i, arg in enumerate(sys.argv):
+        if arg == "--host" and i + 1 < len(sys.argv):
+            host = sys.argv[i + 1]
+        if arg == "--port" and i + 1 < len(sys.argv):
+            try:
+                port = int(sys.argv[i + 1])
+            except ValueError:
+                print(f"Error: --port requires a number, got '{sys.argv[i + 1]}'")
+                sys.exit(1)
+
+    import uvicorn
+
+    from swedish_ai_tutor.web.app import create_app
+
+    print(f"Starting vocabulary review at http://{host}:{port}")
+    if host != "127.0.0.1":
+        print("Warning: this exposes the app to other devices on the network.")
+    uvicorn.run(create_app(settings), host=host, port=port)
 
 
 def _rebuild_vocab() -> None:
@@ -196,13 +231,16 @@ def _print_usage() -> None:
     print("  dry-run          Test Notion integration with mock data")
     print("  review           Start a flashcard review session (default: 20 words)")
     print("  review -n 10     Review only 10 words")
+    print("  review --user U  Review using account U's memory curve")
     print("  vocab            Show vocabulary statistics")
+    print("  web              Start the private mobile review web app")
     print("  rebuild-vocab    Repopulate vocabulary from local lesson JSON (no API calls)")
     print("  add-word <word>  Manually add a word to the database")
     print()
     print("Examples:")
     print("  python -m swedish_ai_tutor run --news 2")
     print("  python -m swedish_ai_tutor review")
+    print("  python -m swedish_ai_tutor web")
     print('  python -m swedish_ai_tutor add-word "utreda" verb "调查"')
     print()
     print("Setup:")

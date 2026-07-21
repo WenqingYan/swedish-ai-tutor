@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -53,6 +53,57 @@ class WordRecord(Base):
     morphology: Mapped[str | None] = mapped_column(Text, nullable=True)
     examples: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_episodes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class UserRecord(Base):
+    """Local learner account."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    password_salt: Mapped[str] = mapped_column(String(64), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class UserWordProgress(Base):
+    """SM-2 review state belonging to one learner and one shared word."""
+
+    __tablename__ = "user_word_progress"
+    __table_args__ = (UniqueConstraint("user_id", "word_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), nullable=False, index=True)
+    mastered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    next_review: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ease_factor: Mapped[float] = mapped_column(Float, nullable=False, default=2.5)
+    interval: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    repetitions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    first_reviewed_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(UTC)
+    )
+    last_reviewed_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class WebSessionRecord(Base):
+    """Hashed opaque browser session token."""
+
+    __tablename__ = "web_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(UTC)
+    )
 
 
 class PhraseRecord(Base):

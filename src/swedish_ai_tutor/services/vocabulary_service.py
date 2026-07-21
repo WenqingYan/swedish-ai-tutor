@@ -35,7 +35,10 @@ class VocabularyService:
         self._repo = WordRepository(session)
 
     def upsert_word(
-        self, entry: VocabularyEntry, episode_id: int | None = None
+        self,
+        entry: VocabularyEntry,
+        episode_id: int | None = None,
+        example: dict[str, str] | None = None,
     ) -> WordRecord:
         """Create or update a word from pipeline analysis.
 
@@ -45,6 +48,7 @@ class VocabularyService:
         Args:
             entry: VocabularyEntry from sentence analysis.
             episode_id: Source episode ID.
+            example: Optional Swedish news sentence and Chinese translation.
 
         Returns:
             The created or updated WordRecord.
@@ -52,7 +56,7 @@ class VocabularyService:
         existing = self._repo.get_by_word(entry.word, entry.pos)
 
         if existing:
-            self._repo.update_frequency(existing, episode_id)
+            self._repo.update_frequency(existing, episode_id, example)
             logger.debug("Word updated: %s (freq=%d)", entry.word, existing.frequency)
             return existing
 
@@ -65,6 +69,7 @@ class VocabularyService:
             meaning=entry.meaning,
             morphology=morphology,
             episode_id=episode_id,
+            example=example,
         )
         logger.debug("New word added: %s [%s]", entry.word, entry.pos)
         return record
@@ -82,21 +87,27 @@ class VocabularyService:
         updated_count = 0
         episode_id = lesson.episode.id
 
-        for word_entry in lesson.new_words:
-            existing = self._repo.get_by_word(word_entry.word, word_entry.pos)
-            if existing:
-                self._repo.update_frequency(existing, episode_id)
-                updated_count += 1
-            else:
-                morphology = self._build_morphology_dict(word_entry)
-                self._repo.create(
-                    word=word_entry.word,
-                    pos=word_entry.pos,
-                    meaning=word_entry.meaning,
-                    morphology=morphology,
-                    episode_id=episode_id,
-                )
-                new_count += 1
+        for analysis in lesson.all_analyses:
+            example = {
+                "swedish": analysis.original,
+                "chinese": analysis.translation,
+            }
+            for word_entry in analysis.vocabulary:
+                existing = self._repo.get_by_word(word_entry.word, word_entry.pos)
+                if existing:
+                    self._repo.update_frequency(existing, episode_id, example)
+                    updated_count += 1
+                else:
+                    morphology = self._build_morphology_dict(word_entry)
+                    self._repo.create(
+                        word=word_entry.word,
+                        pos=word_entry.pos,
+                        meaning=word_entry.meaning,
+                        morphology=morphology,
+                        episode_id=episode_id,
+                        example=example,
+                    )
+                    new_count += 1
 
         logger.info(
             "Vocabulary persisted: %d new, %d updated",
@@ -159,6 +170,10 @@ class VocabularyService:
             List of WordRecords due for review.
         """
         return self._repo.get_due_for_review()
+
+    def get_word(self, word_id: int) -> WordRecord | None:
+        """Return one vocabulary record by ID."""
+        return self._repo.get_by_id(word_id)
 
     def get_new_words(self) -> list[WordRecord]:
         """Get words never reviewed.

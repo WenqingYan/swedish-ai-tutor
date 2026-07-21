@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#173f35">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Svenska">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <title>Svenska varje dag</title>
+  <style>
+    :root { color-scheme:light; --ink:#173f35; --muted:#6b756e; --paper:#fffdf8; --cream:#f6f1e8; --gold:#e8ad45; --line:#ded8ca; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100svh; background:var(--cream); color:var(--ink); font-family:ui-rounded,"SF Pro Rounded","Avenir Next",system-ui,sans-serif; }
+    button,input { font:inherit; }
+    button { -webkit-tap-highlight-color:transparent; }
+    .app { width:min(100%,620px); margin:auto; padding:max(20px,env(safe-area-inset-top)) 20px max(28px,env(safe-area-inset-bottom)); }
+    header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:22px; }
+    h1 { margin:0; font-family:Georgia,serif; font-size:clamp(30px,8vw,42px); font-weight:600; letter-spacing:-1.5px; }
+    .date { margin:6px 0 0; color:var(--muted); font-size:14px; text-transform:capitalize; }
+    .count { min-width:64px; padding:10px 12px; border-radius:18px; background:var(--ink); color:white; text-align:center; font-weight:700; }
+    .count small { display:block; opacity:.7; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; }
+    .progress { height:6px; overflow:hidden; background:#e2dccf; border-radius:99px; margin-bottom:22px; }
+    .progress span { display:block; height:100%; width:0; background:var(--gold); transition:width .25s ease; }
+    .panel,.card { background:var(--paper); border:1px solid var(--line); border-radius:30px; box-shadow:0 18px 50px rgba(38,61,51,.09); }
+    .panel { padding:30px 24px; }
+    .intro { margin:0 0 8px; font-family:Georgia,serif; font-size:29px; }
+    .subtle { margin:0; color:var(--muted); line-height:1.55; }
+    .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; margin:25px 0 28px; }
+    .stat { padding:16px 7px; border-radius:18px; background:var(--cream); text-align:center; }
+    .stat strong { display:block; font-size:23px; }
+    .stat span { color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+    .label { display:block; margin-bottom:11px; font-size:13px; font-weight:800; }
+    .choices { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+    .choice { min-height:54px; border:1px solid var(--line); border-radius:16px; background:var(--paper); color:var(--ink); font-weight:800; cursor:pointer; }
+    .choice.selected { border-color:var(--ink); background:var(--ink); color:white; }
+    .custom { display:flex; align-items:center; gap:12px; margin-top:10px; padding:10px 14px; border:1px solid var(--line); border-radius:16px; color:var(--muted); font-size:13px; font-weight:700; }
+    .custom input { min-width:0; width:100%; border:0; outline:0; background:transparent; color:var(--ink); text-align:right; font-weight:800; }
+    .note { margin:20px 0 0; padding:14px 15px; border-left:3px solid var(--gold); background:#fbf3e3; border-radius:5px 14px 14px 5px; color:#56675f; font-size:13px; line-height:1.5; }
+    .account-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px; padding-bottom:18px; border-bottom:1px solid var(--line); }
+    .account-name { font-weight:800; }
+    .account-actions { display:flex; gap:8px; }
+    .text-button { padding:8px; border:0; background:transparent; color:var(--ink); font-size:12px; font-weight:800; cursor:pointer; }
+    .field { display:block; margin-top:17px; color:var(--muted); font-size:12px; font-weight:800; }
+    .field input { width:100%; min-height:52px; margin-top:7px; padding:0 15px; border:1px solid var(--line); border-radius:15px; outline:0; background:white; color:var(--ink); }
+    .field input:focus { border-color:var(--ink); box-shadow:0 0 0 3px rgba(23,63,53,.09); }
+    .form-error { min-height:20px; margin:12px 0 -4px; color:#a43d35; font-size:13px; }
+    .card { min-height:430px; padding:34px 26px 25px; display:flex; flex-direction:column; align-items:center; text-align:center; }
+    .eyebrow { color:var(--muted); font-size:12px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+    .word { margin:auto 0 8px; font-family:Georgia,serif; font-size:clamp(43px,13vw,70px); line-height:1; letter-spacing:-2px; overflow-wrap:anywhere; }
+    .pos { color:var(--muted); font-style:italic; }
+    .answer { width:100%; margin:auto 0 0; padding-top:22px; border-top:1px solid var(--line); animation:rise .25s ease; }
+    .meaning { margin:0 0 17px; font-size:24px; font-weight:700; }
+    .morph { margin:0; color:#40564d; font-size:14px; line-height:1.65; white-space:pre-line; }
+    .example { margin:18px 0 0; padding-top:16px; border-top:1px solid var(--line); color:#40564d; font-size:13px; line-height:1.55; text-align:left; }
+    .example strong { display:block; margin-bottom:4px; color:var(--ink); font-size:11px; letter-spacing:.06em; text-transform:uppercase; }
+    .example .chinese { display:block; margin-top:5px; color:var(--muted); }
+    .meta { margin-top:18px; color:var(--muted); font-size:12px; }
+    .primary,.secondary { width:100%; min-height:58px; margin-top:18px; border-radius:18px; font-weight:800; cursor:pointer; }
+    .primary { border:0; color:white; background:var(--ink); }
+    .secondary { border:1px solid var(--line); color:var(--ink); background:transparent; }
+    .ratings { width:100%; display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:18px; }
+    .rating { min-height:58px; border:1px solid var(--line); border-radius:16px; background:var(--paper); color:var(--ink); cursor:pointer; font-size:13px; font-weight:800; }
+    .rating small { display:block; color:var(--muted); font-size:10px; font-weight:500; margin-top:3px; }
+    .rating:active,.primary:active,.secondary:active,.choice:active { transform:scale(.98); }
+    .empty { margin:auto; }
+    .empty .mark { font-size:58px; }
+    .empty h2 { margin:12px 0 8px; font-family:Georgia,serif; font-size:31px; }
+    .empty p,.error { color:var(--muted); line-height:1.5; }
+    [hidden] { display:none !important; }
+    @keyframes rise { from { opacity:0; transform:translateY(7px); } }
+    @media (max-width:380px) { .app{padding-left:14px;padding-right:14px}.panel,.card{padding-left:18px;padding-right:18px}.ratings{gap:5px}.rating{font-size:12px} }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <div><h1>Svenska varje dag</h1><p class="date" id="date"></p></div>
+      <div class="count" id="count" hidden><span id="available">—</span><small id="count-label">due</small></div>
+    </header>
+
+    <section id="auth-screen" class="panel">
+      <h2 class="intro" id="auth-title">Welcome back</h2>
+      <p class="subtle" id="auth-copy">Sign in to continue your personal memory curve.</p>
+      <form id="auth-form">
+        <label class="field" id="display-field" hidden>Display name<input id="display-name" maxlength="100" autocomplete="name"></label>
+        <label class="field">Username<input id="username" minlength="3" maxlength="50" autocomplete="username" required></label>
+        <label class="field">Password<input id="password" type="password" minlength="8" autocomplete="current-password" required></label>
+        <p class="form-error" id="auth-error" role="alert"></p>
+        <button class="primary" id="auth-submit" type="submit">Sign in</button>
+      </form>
+    </section>
+
+    <section id="start-screen" class="panel" hidden>
+      <div class="account-bar">
+        <span>Hej, <span class="account-name" id="account-name"></span></span>
+        <div class="account-actions"><button class="text-button" id="add-account">Add account</button><button class="text-button" id="sign-out">Sign out</button></div>
+      </div>
+      <h2 class="intro">Start a review</h2>
+      <p class="subtle">Choose a comfortable session size. Due words come first, followed by new words.</p>
+      <div class="stats">
+        <div class="stat"><strong id="due-stat">—</strong><span>Due</span></div>
+        <div class="stat"><strong id="new-stat">—</strong><span>New</span></div>
+        <div class="stat"><strong id="learning-stat">—</strong><span>Learning</span></div>
+      </div>
+      <span class="label">Words in this session</span>
+      <div class="choices" role="group" aria-label="Session size">
+        <button class="choice" data-size="5">5</button>
+        <button class="choice selected" data-size="10">10</button>
+        <button class="choice" data-size="20">20</button>
+      </div>
+      <label class="custom">Custom <input id="custom-size" type="number" min="1" max="100" inputmode="numeric" placeholder="1–100"></label>
+      <p class="note">Your memory curve follows calendar due dates, not session count. A word reviewed now will not appear in another session until it is due again.</p>
+      <button class="primary" id="start">Start 10-word session</button>
+    </section>
+
+    <section id="add-account-screen" class="panel" hidden>
+      <h2 class="intro">Add a learner</h2>
+      <p class="subtle">Vocabulary is shared, but this learner starts with an independent memory curve.</p>
+      <form id="add-account-form">
+        <label class="field">Display name<input id="new-display-name" maxlength="100" autocomplete="off" required></label>
+        <label class="field">Username<input id="new-username" minlength="3" maxlength="50" autocomplete="off" required></label>
+        <label class="field">Password<input id="new-password" type="password" minlength="8" autocomplete="new-password" required></label>
+        <p class="form-error" id="add-account-error" role="alert"></p>
+        <button class="primary" type="submit">Create learner</button>
+        <button class="secondary" id="cancel-add-account" type="button">Cancel</button>
+      </form>
+    </section>
+
+    <section id="review-screen" hidden>
+      <div class="progress" aria-label="Session progress"><span id="progress"></span></div>
+      <section class="card" id="card" aria-live="polite"></section>
+      <button class="primary" id="reveal" hidden>Reveal meaning</button>
+      <div class="ratings" id="ratings" hidden>
+        <button class="rating" data-quality="0">Again<small>0</small></button>
+        <button class="rating" data-quality="2">Hard<small>2</small></button>
+        <button class="rating" data-quality="4">Good<small>4</small></button>
+        <button class="rating" data-quality="5">Easy<small>5</small></button>
+      </div>
+      <button class="secondary" id="another" hidden>Start another session</button>
+    </section>
+  </main>
+  <script>
+    const state={words:[],index:0,size:10,revealed:false,busy:false,user:null};
+    const authScreen=document.querySelector('#auth-screen'), startScreen=document.querySelector('#start-screen'), reviewScreen=document.querySelector('#review-screen'), addAccountScreen=document.querySelector('#add-account-screen');
+    const card=document.querySelector('#card'), reveal=document.querySelector('#reveal'), ratings=document.querySelector('#ratings'), another=document.querySelector('#another');
+    const count=document.querySelector('#count'), available=document.querySelector('#available'), countLabel=document.querySelector('#count-label'), customSize=document.querySelector('#custom-size'), startButton=document.querySelector('#start');
+    document.querySelector('#date').textContent=new Intl.DateTimeFormat('en-SE',{weekday:'long',month:'long',day:'numeric'}).format(new Date());
+    const clean=value => (value===null||value===undefined||value==='')?'—':String(value);
+    function morphology(m){
+      if(!m) return 'Böjningsformer: —';
+      if(m.type==='verb') return `Imperativ: ${clean(m.imperative)}\nInfinitiv: ${clean(m.infinitive)} · Presens: ${clean(m.present)}\nPreteritum: ${clean(m.past)} · Supinum: ${clean(m.supine)}`;
+      if(m.type==='noun') return `${clean(m.gender)}-ord\n${clean(m.indefinite_singular)} · ${clean(m.definite_singular)}\n${clean(m.indefinite_plural)} · ${clean(m.definite_plural)}`;
+      if(m.type==='adjective') return `${clean(m.en_form)} · ${clean(m.ett_form)} · ${clean(m.plural_definite)}\nKomparativ: ${clean(m.comparative)} · Superlativ: ${clean(m.superlative)}`;
+      return 'Böjningsformer: —';
+    }
+    function escapeHtml(value){const node=document.createElement('div');node.textContent=value;return node.innerHTML;}
+    function exampleHtml(example){
+      if(!example||(!example.swedish&&!example.chinese))return '';
+      return `<div class="example"><strong>Från nyheterna · 新闻例句</strong>${example.swedish?`<span>${escapeHtml(example.swedish)}</span>`:''}${example.chinese?`<span class="chinese">${escapeHtml(example.chinese)}</span>`:''}</div>`;
+    }
+    function setSize(size){
+      state.size=Math.max(1,Math.min(100,Number(size)||10));
+      document.querySelectorAll('.choice').forEach(button=>button.classList.toggle('selected',Number(button.dataset.size)===state.size));
+      startButton.textContent=`Start ${state.size}-word session`;
+    }
+    async function jsonRequest(url,options={}){
+      const response=await fetch(url,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});
+      const payload=response.status===204?null:await response.json();
+      if(!response.ok){const error=new Error(payload?.detail||'Something went wrong.');error.status=response.status;throw error;}
+      return payload;
+    }
+    function showStart(user){
+      state.user=user;authScreen.hidden=true;addAccountScreen.hidden=true;reviewScreen.hidden=true;startScreen.hidden=false;count.hidden=false;
+      document.querySelector('#account-name').textContent=user.display_name;loadStats();
+    }
+    function showLogin(setupRequired=false){
+      state.user=null;startScreen.hidden=true;reviewScreen.hidden=true;addAccountScreen.hidden=true;authScreen.hidden=false;count.hidden=true;
+      document.querySelector('#display-field').hidden=!setupRequired;
+      document.querySelector('#display-name').required=setupRequired;
+      document.querySelector('#password').autocomplete=setupRequired?'new-password':'current-password';
+      document.querySelector('#auth-title').textContent=setupRequired?'Create your account':'Welcome back';
+      document.querySelector('#auth-copy').textContent=setupRequired?'Your existing review progress will be assigned to this first account.':'Sign in to continue your personal memory curve.';
+      document.querySelector('#auth-submit').textContent=setupRequired?'Create owner account':'Sign in';
+      document.querySelector('#auth-form').dataset.setup=String(setupRequired);
+    }
+    async function loadAuth(){
+      try{const status=await jsonRequest('/api/auth/status');if(status.authenticated)showStart(status.user);else showLogin(status.setup_required);}
+      catch{showLogin(false);document.querySelector('#auth-error').textContent='Could not contact the tutor service.';}
+    }
+    async function loadStats(){
+      try{
+        const stats=await jsonRequest('/api/stats');
+        available.textContent=stats.due;countLabel.textContent='due';
+        document.querySelector('#due-stat').textContent=stats.due;document.querySelector('#new-stat').textContent=stats.new;document.querySelector('#learning-stat').textContent=stats.learning;
+      }catch(error){if(error.status===401){showLogin(false);return;}startScreen.innerHTML='<div class="empty"><h2>Could not load</h2><p class="error">Check that the Mac review service is running, then refresh.</p></div>';}
+    }
+    function render(){
+      const total=state.words.length,word=state.words[state.index];
+      document.querySelector('#progress').style.width=total?`${state.index/total*100}%`:'100%';
+      available.textContent=total?`${Math.min(state.index+1,total)}/${total}`:'0';countLabel.textContent='session';
+      if(!word){card.innerHTML='<div class="empty"><div class="mark">✓</div><h2>Bra jobbat!</h2><p>You finished this session. Your next reviews stay scheduled by date.</p></div>';reveal.hidden=true;ratings.hidden=true;another.hidden=false;return;}
+      card.innerHTML=`<div class="eyebrow">Word ${state.index+1} of ${total}</div><div class="word">${escapeHtml(word.word)}</div><div class="pos">${escapeHtml(word.pos)}</div>${state.revealed?`<div class="answer"><p class="meaning">${escapeHtml(word.meaning)}</p><p class="morph">${escapeHtml(morphology(word.morphology))}</p>${exampleHtml(word.example)}<div class="meta">Seen ${word.frequency}× · current interval ${word.interval} days</div></div>`:''}`;
+      reveal.hidden=state.revealed;ratings.hidden=!state.revealed;another.hidden=true;
+    }
+    async function startSession(){
+      startButton.disabled=true;startButton.textContent='Preparing session…';
+      try{
+        const data=await jsonRequest(`/api/session?limit=${state.size}`);
+        state.words=data.words;state.index=0;state.revealed=false;startScreen.hidden=true;reviewScreen.hidden=false;render();
+      }catch{alert('The session could not be loaded. Please try again.');}
+      finally{startButton.disabled=false;startButton.textContent=`Start ${state.size}-word session`;}
+    }
+    document.querySelector('.choices').addEventListener('click',event=>{const button=event.target.closest('[data-size]');if(button){customSize.value='';setSize(button.dataset.size);}});
+    customSize.addEventListener('input',()=>{if(customSize.value)setSize(customSize.value);});
+    startButton.addEventListener('click',startSession);
+    reveal.addEventListener('click',()=>{state.revealed=true;render();});
+    ratings.addEventListener('click',async event=>{
+      const button=event.target.closest('[data-quality]');if(!button||state.busy)return;state.busy=true;
+      try{
+        await jsonRequest(`/api/words/${state.words[state.index].id}/review`,{method:'POST',body:JSON.stringify({quality:Number(button.dataset.quality)})});state.index++;state.revealed=false;render();
+      }catch(error){if(error.status===409){state.index++;state.revealed=false;render();return;}if(error.status===401){showLogin(false);return;}alert('The rating was not saved. Please try again.');}
+      finally{state.busy=false;}
+    });
+    another.addEventListener('click',()=>{reviewScreen.hidden=true;startScreen.hidden=false;available.textContent='—';countLabel.textContent='due';loadStats();});
+    document.querySelector('#auth-form').addEventListener('submit',async event=>{
+      event.preventDefault();const setup=event.currentTarget.dataset.setup==='true',error=document.querySelector('#auth-error');error.textContent='';
+      const body={username:document.querySelector('#username').value,password:document.querySelector('#password').value};if(setup)body.display_name=document.querySelector('#display-name').value;
+      try{const user=await jsonRequest(setup?'/api/auth/register':'/api/auth/login',{method:'POST',body:JSON.stringify(body)});showStart(user);event.currentTarget.reset();}
+      catch(problem){error.textContent=problem.message;}
+    });
+    document.querySelector('#sign-out').addEventListener('click',async()=>{try{await jsonRequest('/api/auth/logout',{method:'POST'});}finally{showLogin(false);}});
+    document.querySelector('#add-account').addEventListener('click',()=>{startScreen.hidden=true;addAccountScreen.hidden=false;});
+    document.querySelector('#cancel-add-account').addEventListener('click',()=>{addAccountScreen.hidden=true;startScreen.hidden=false;});
+    document.querySelector('#add-account-form').addEventListener('submit',async event=>{
+      event.preventDefault();const error=document.querySelector('#add-account-error');error.textContent='';
+      try{await jsonRequest('/api/auth/register',{method:'POST',body:JSON.stringify({display_name:document.querySelector('#new-display-name').value,username:document.querySelector('#new-username').value,password:document.querySelector('#new-password').value})});event.currentTarget.reset();addAccountScreen.hidden=true;startScreen.hidden=false;alert('Learner created. They can now sign in on their device.');}
+      catch(problem){error.textContent=problem.message;}
+    });
+    setSize(10);loadAuth();
+  </script>
+</body>
+</html>

@@ -70,6 +70,161 @@ Rating shortcuts:
 - **e** (easy) = instant recall → grow interval faster
 - **q** = quit session
 
+### `web` — Review on iPhone
+
+Start the touch-friendly review app on the Mac. It uses the same vocabulary
+database and SM-2 schedule as terminal review.
+
+The opening screen lets you choose 5, 10, 20, or a custom number of words for
+each session. You can start several sessions in one day: due words are always
+selected first, remaining spaces are filled with new words, and a reviewed word
+cannot advance again until its stored calendar due date. Session count never
+shortens the SM-2 memory interval.
+
+Vocabulary content is shared between learner accounts, while every account has
+its own ease factor, interval, repetitions, next-review date, and mastered
+state. Passwords are stored as salted hashes. Sign-in uses an opaque, HTTP-only,
+Secure, SameSite cookie; the raw session token is never stored in the database.
+
+After revealing a word, the review card shows its Chinese meaning, morphology,
+and then a smaller news-context example with the original Swedish sentence and
+Chinese translation. New lessons save this context automatically. Existing
+words can be filled from local lesson JSON without API calls by running
+`python -m swedish_ai_tutor rebuild-vocab`.
+
+#### 1. Install and connect Tailscale
+
+1. Install [Tailscale for macOS](https://tailscale.com/download/mac) and open
+   the app.
+2. Sign in and leave the Tailscale menu-bar app connected.
+3. Install Tailscale from the App Store on the iPhone, sign in with the same
+   account, and connect it.
+4. In the Mac app, open **Settings → General → Install Tailscale CLI** and
+   approve the administrator prompt.
+
+Open a new Terminal window, or refresh the current shell, then verify the CLI:
+
+```bash
+rehash
+which tailscale
+tailscale status
+```
+
+The command path should normally be `/usr/local/bin/tailscale`, and `status`
+should list both the Mac and iPhone. If the CLI installation button is not
+visible, run the installer included with the app:
+
+```bash
+osascript /Applications/Tailscale.app/Contents/Resources/InstallTailscaleCLI.scpt
+rehash
+```
+
+#### 2. Start the tutor web app
+
+From the project directory:
+
+```bash
+cd /Users/wenqingyan/Projects/swedish_ai_tutor_project
+.venv/bin/python -m swedish_ai_tutor web
+```
+
+Keep this Terminal window open. The server intentionally listens only on
+`127.0.0.1:8000`. On the Mac, test it in a browser at
+`http://127.0.0.1:8000`. The page loads over local HTTP, but the default Secure
+authentication cookie is intended for the Tailscale HTTPS address. For a
+temporary Mac-only HTTP test, start the server with
+`WEB_SECURE_COOKIES=false`; never use that setting for normal remote access.
+
+#### Keep the Mac awake while serving
+
+For reliable iPhone access, connect the Mac to power and start the tutor with
+macOS `caffeinate` instead of the ordinary command:
+
+```bash
+cd /Users/wenqingyan/Projects/swedish_ai_tutor_project
+caffeinate -i .venv/bin/python -m swedish_ai_tutor web
+```
+
+This prevents idle system sleep for as long as the tutor process is running;
+the display can still turn off normally. Keep the Terminal window open. Closing
+a MacBook lid normally still puts it to sleep, and this command does not restart
+the server after a reboot or crash.
+
+For an additional system setting, open **System Settings → Battery → Options**
+and enable **Prevent automatic sleeping on power adapter when the display is
+off**. Keeping the Mac connected to its power adapter is recommended.
+
+#### 3. Create the private iPhone address
+
+Open a second Terminal window and run:
+
+```bash
+tailscale serve --bg http://127.0.0.1:8000
+tailscale serve status
+```
+
+The final command displays an HTTPS address similar to:
+
+```text
+https://your-mac-name.your-tailnet.ts.net
+```
+
+Open the complete `https://...ts.net` address in Safari on the iPhone. Do not
+enter `127.0.0.1:8000` on the iPhone: that address would refer to the iPhone
+itself rather than the Mac.
+
+#### 4. Create the learner accounts
+
+1. Open the Tailscale HTTPS address on your iPhone.
+2. On first use, create the owner account. All existing reviewed progress is
+   copied to this first account; truly unreviewed words remain new. A timestamped
+   `vocabulary.db.before-accounts-*.backup` file is created before this migration.
+3. From the session start page, choose **Add account** and create your husband's
+   username and password.
+4. On his iPhone, open the same Tailscale HTTPS address and sign in with his
+   account. He receives the same vocabulary catalog with a fresh, independent
+   memory curve.
+
+Each phone keeps its own login cookie. Signing out or rating a word affects only
+that account. To use terminal review after accounts exist, identify the learner:
+
+```bash
+python -m swedish_ai_tutor review --user your_username
+python -m swedish_ai_tutor review --user husband_username
+```
+
+When only one account exists, `--user` is optional. When several accounts
+exist, the terminal lists the available usernames and requires an explicit
+choice.
+
+In Safari, choose **Share → Add to Home Screen → Open as Web App**. Do not use
+Tailscale Funnel: `serve` keeps the tutor private to devices in your Tailscale
+network.
+
+#### Troubleshooting
+
+- **`zsh: command not found: tailscale`** — Install the CLI from the Tailscale
+  Mac app as described above, then open a new Terminal or run `rehash`.
+- **`The Tailscale CLI failed to start: Failed to load preferences`** — Open
+  the Tailscale Mac app, finish signing in and approving its VPN configuration,
+  confirm it shows **Connected**, and retry `tailscale status`.
+- **Safari cannot open the address** — Confirm Tailscale is connected on both
+  devices, the tutor command is still running, and `tailscale serve status`
+  shows the `127.0.0.1:8000` proxy.
+- **No words appear** — Confirm `DB_PATH` points to the existing vocabulary
+  database and run `python -m swedish_ai_tutor vocab` on the Mac.
+
+The Mac must remain powered on, awake, connected to the internet, and running
+the tutor web process while reviewing. To stop the private proxy later, run:
+
+```bash
+tailscale serve reset
+```
+
+For same-Wi-Fi testing without Tailscale, run `web --host 0.0.0.0` and open the
+Mac's local IP address on the iPhone. This exposes the service to the local
+network and is not recommended on an untrusted network.
+
 ### `vocab` — Show vocabulary statistics
 
 ```bash
@@ -105,7 +260,9 @@ python -m swedish_ai_tutor add-word "samhälle"
 
 Reconciles every vocabulary entry in `data/lessons/lesson_*.json` into the
 SQLite database. It makes no OpenAI or Notion calls, preserves existing review
-progress and manual-only words, and creates a timestamped database backup first.
+progress and manual-only words, fills each lesson word with a Swedish news
+sentence and its stored Chinese translation, and creates a timestamped database
+backup first.
 
 ```bash
 python -m swedish_ai_tutor rebuild-vocab
@@ -275,6 +432,9 @@ python -m swedish_ai_tutor run --news 2
 # Anytime: review due words (5-10 min)
 python -m swedish_ai_tutor review
 
+# Or review from iPhone through the private web app
+python -m swedish_ai_tutor web
+
 # Check progress
 python -m swedish_ai_tutor vocab
 ```
@@ -285,6 +445,7 @@ The vocabulary database is stored locally at `./data/vocabulary.db` (SQLite). It
 
 - Word, POS, Chinese meaning
 - Full morphology (verb/noun/adjective forms as JSON)
+- Latest Swedish news-context sentence and its Chinese translation
 - Frequency count (how many times encountered across episodes)
 - First seen / last seen dates
 - SM-2 state: ease factor, interval, repetitions, next review date
@@ -309,6 +470,7 @@ All settings go in `.env`. Only the first 3 are required:
 | `DATA_DIR` | — | `./data` | Local data directory |
 | `DB_PATH` | — | `./data/vocabulary.db` | SQLite database path |
 | `LOG_LEVEL` | — | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
+| `WEB_SECURE_COOKIES` | — | `true` | Require HTTPS when storing web login cookies |
 
 ---
 

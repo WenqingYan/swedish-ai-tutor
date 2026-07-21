@@ -35,6 +35,11 @@ class WordRepository:
             stmt = stmt.where(WordRecord.pos == pos)
         return self._session.execute(stmt).scalar_one_or_none()
 
+    def get_by_id(self, word_id: int) -> WordRecord | None:
+        """Look up a vocabulary record by primary key."""
+        stmt = select(WordRecord).where(WordRecord.id == word_id)
+        return self._session.execute(stmt).scalar_one_or_none()
+
     def create(
         self,
         word: str,
@@ -42,6 +47,7 @@ class WordRepository:
         meaning: str,
         morphology: dict | None = None,  # type: ignore[type-arg]
         episode_id: int | None = None,
+        example: dict[str, str] | None = None,
     ) -> WordRecord:
         """Create a new word record.
 
@@ -51,6 +57,7 @@ class WordRepository:
             meaning: Chinese meaning.
             morphology: Optional morphology dict (verb/noun/adj forms).
             episode_id: Optional source episode ID.
+            example: Optional Swedish news sentence and Chinese translation.
 
         Returns:
             The created WordRecord.
@@ -73,6 +80,7 @@ class WordRepository:
             interval=0,
             repetitions=0,
             morphology=json.dumps(morphology, ensure_ascii=False) if morphology else None,
+            examples=json.dumps(example, ensure_ascii=False) if example else None,
             source_episodes=json.dumps([episode_id]) if episode_id else None,
         )
         self._session.add(record)
@@ -80,19 +88,25 @@ class WordRepository:
         return record
 
     def update_frequency(
-        self, record: WordRecord, episode_id: int | None = None
+        self,
+        record: WordRecord,
+        episode_id: int | None = None,
+        example: dict[str, str] | None = None,
     ) -> WordRecord:
         """Increment frequency and update last_seen for an existing word.
 
         Args:
             record: Existing word record.
             episode_id: Optional episode where word was encountered again.
+            example: Optional latest news sentence and Chinese translation.
 
         Returns:
             Updated WordRecord.
         """
         record.frequency += 1
         record.last_seen = datetime.now(UTC)
+        if example:
+            record.examples = json.dumps(example, ensure_ascii=False)
 
         # Add episode to source list
         if episode_id:
@@ -168,7 +182,11 @@ class WordRepository:
         return list(self._session.execute(stmt).scalars().all())
 
     def get_new_words(self) -> list[WordRecord]:
-        """Get words that have never been reviewed (repetitions = 0).
+        """Get words that have never been reviewed.
+
+        Failed reviews reset SM-2 repetitions to zero but keep a positive
+        interval. Requiring interval zero prevents those words from being
+        treated as new again before their next calendar due date.
 
         Returns:
             List of new, unreviewed words.
@@ -177,6 +195,7 @@ class WordRepository:
             select(WordRecord)
             .where(WordRecord.mastered == False)  # noqa: E712
             .where(WordRecord.repetitions == 0)
+            .where(WordRecord.interval == 0)
             .order_by(WordRecord.first_seen.desc())
         )
         return list(self._session.execute(stmt).scalars().all())
@@ -209,7 +228,10 @@ class WordRepository:
             1 for w in all_words
             if not w.mastered and w.next_review and w.next_review <= now
         )
-        new = sum(1 for w in all_words if not w.mastered and w.repetitions == 0)
+        new = sum(
+            1 for w in all_words
+            if not w.mastered and w.repetitions == 0 and w.interval == 0
+        )
 
         return {
             "total": total,

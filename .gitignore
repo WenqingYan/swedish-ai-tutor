@@ -27,6 +27,7 @@ data/logs/
 data/lessons/
 data/vocabulary.db
 data/vocabulary.db.backup_*
+data/vocabulary.db.before-accounts-*.backup
 
 # OS
 .DS_Store

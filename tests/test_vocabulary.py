@@ -1,5 +1,6 @@
 """Tests for v2 vocabulary system: SM-2 scheduler, word repo, and vocab service."""
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -8,7 +9,15 @@ from sqlalchemy.orm import Session
 
 from swedish_ai_tutor.db.engine import create_db_engine, get_session_factory, init_db
 from swedish_ai_tutor.db.repositories.word_repo import WordRepository
-from swedish_ai_tutor.models.lesson import NounMorphology, VocabularyEntry
+from swedish_ai_tutor.models.episode import Episode
+from swedish_ai_tutor.models.lesson import (
+    GrammarNote,
+    Lesson,
+    NounMorphology,
+    SentenceAnalysis,
+    VocabularyEntry,
+)
+from swedish_ai_tutor.models.transcript import Transcript
 from swedish_ai_tutor.review.scheduler import calculate_next_review
 from swedish_ai_tutor.services.vocabulary_service import VocabularyService
 
@@ -177,6 +186,40 @@ class TestVocabularyService:
         record = repo.get_by_word("brand", "noun")
         assert record is not None
         assert record.frequency == 2
+
+    def test_lesson_word_stores_news_sentence_with_chinese_translation(
+        self, db_session: Session
+    ) -> None:
+        """Lesson persistence attaches its original sentence as word context."""
+        entry = VocabularyEntry(word="utreda", pos="verb", meaning="调查")
+        analysis = SentenceAnalysis(
+            original="Polisen ska utreda händelsen.",
+            translation="警方将调查这一事件。",
+            grammar=GrammarNote(pattern="ska + infinitiv", explanation="表示将来"),
+            vocabulary=[entry],
+        )
+        lesson = Lesson(
+            episode=Episode(
+                id=123,
+                title="Nyheter",
+                description="Test",
+                publish_date=datetime.now(UTC),
+                audio_url="https://example.com/audio.mp3",
+                duration_seconds=60,
+                url="https://example.com/episode",
+            ),
+            transcript=Transcript(full_text=analysis.original),
+            analyses=[analysis],
+        )
+
+        VocabularyService(db_session).upsert_from_lesson(lesson)
+
+        record = WordRepository(db_session).get_by_word("utreda", "verb")
+        assert record is not None
+        assert json.loads(record.examples or "{}") == {
+            "swedish": "Polisen ska utreda händelsen.",
+            "chinese": "警方将调查这一事件。",
+        }
 
     def test_process_review_updates_schedule(self, db_session: Session) -> None:
         """Processing a review updates the word's schedule."""
