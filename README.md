@@ -72,16 +72,16 @@ Rating shortcuts:
 
 ### `web` — Review on iPhone
 
-Start the touch-friendly review app on the Mac. It uses the same vocabulary
-database and SM-2 schedule as terminal review.
+Start the touch-friendly review app on the Mac. It reviews both words and
+reusable phrases from the same lesson database with date-based SM-2 scheduling.
 
-The opening screen lets you choose 5, 10, 20, or a custom number of words for
-each session. You can start several sessions in one day: due words are always
-selected first, remaining spaces are filled with new words, and a reviewed word
-cannot advance again until its stored calendar due date. Session count never
-shortens the SM-2 memory interval.
+The opening screen lets you switch between **Words** and **Phrases**, then choose
+5, 10, 20, or a custom number of cards. You can start several sessions in one
+day: due cards are always selected first, remaining spaces are filled with new
+cards, and a reviewed card cannot advance again until its stored calendar due
+date. Words and phrases have separate memory curves.
 
-Vocabulary content is shared between learner accounts, while every account has
+Word and phrase content is shared between learner accounts, while every account has
 its own ease factor, interval, repetitions, next-review date, and mastered
 state. Passwords are stored as salted hashes. Sign-in uses an opaque, HTTP-only,
 Secure, SameSite cookie; the raw session token is never stored in the database.
@@ -91,6 +91,22 @@ and then a smaller news-context example with the original Swedish sentence and
 Chinese translation. New lessons save this context automatically. Existing
 words can be filled from local lesson JSON without API calls by running
 `python -m swedish_ai_tutor rebuild-vocab`.
+
+If a word is unsuitable, reveal the card and use **不合适？从词库删除** below
+the rating buttons. Deletion requires a separate confirmation and is kept away
+from normal review controls to prevent accidental taps. Because the catalog is
+shared, confirming permanently removes the word and its review progress for all
+local learner accounts.
+
+Each newly analyzed article now saves its reusable collocations, particle verbs,
+fixed expressions, idioms, formal news phrases, and useful SFI sentence frames
+to the `phrases` table automatically. Phrase cards show the Chinese meaning,
+phrase type, and the original bilingual news context. To import phrases from
+all existing local lessons without using API tokens, run:
+
+```bash
+python -m swedish_ai_tutor rebuild-phrases
+```
 
 #### 1. Install and connect Tailscale
 
@@ -244,17 +260,45 @@ python -m swedish_ai_tutor vocab
 └──────────────────┴───────┘
 ```
 
-### `add-word` — Manually add vocabulary
+### `add-word` — Add and automatically complete vocabulary
 
-Add words you encounter outside the daily pipeline.
+Add words you encounter outside the daily pipeline. By default, the command
+queries the configured OpenAI API to identify the dictionary form and part of
+speech, fill the Chinese meaning and complete verb/noun/adjective forms, and
+write a new Swedish example with its Chinese translation. The completed card is
+saved directly to the same database used by terminal and web review.
 
 ```bash
-# With POS and meaning
+# Just enter the Swedish word; the API completes the card
+python -m swedish_ai_tutor add-word "samhälle"
+
+# Optional hints help when a word is ambiguous
 python -m swedish_ai_tutor add-word "utreda" verb "调查"
 
-# Just the word (fill in details later)
-python -m swedish_ai_tutor add-word "samhälle"
+# Add manually without an API call (no automatic forms or example)
+python -m swedish_ai_tutor add-word "samhälle" noun "社会" --no-api
 ```
+
+The normal command needs a valid `OPENAI_API_KEY` in `.env` and uses a small
+amount of API tokens. If enrichment fails, no incomplete word is written; retry
+the command or deliberately use `--no-api`.
+
+### `dedupe-vocab` — Merge inflected duplicate cards
+
+Normal lesson imports now use morphology to convert inflected forms to the
+dictionary form before checking the database. For example, `berättar` is stored
+as `berätta`, `annonserna` as `annons`, and `farligaste` as `farlig`. Common POS
+aliases such as `adjective`/`adj` are normalized as well.
+
+To clean duplicates that were added before this behavior was introduced, run:
+
+```bash
+python -m swedish_ai_tutor dedupe-vocab
+```
+
+The command creates a timestamped database backup first. It combines frequency
+and source episodes, keeps the latest example, and preserves the more advanced
+review state independently for each local account.
 
 ### `rebuild-vocab` — Recheck local lessons and repopulate vocabulary
 
@@ -266,6 +310,16 @@ backup first.
 
 ```bash
 python -m swedish_ai_tutor rebuild-vocab
+```
+
+### `rebuild-phrases` — Populate phrases from saved lessons
+
+Scans saved lesson JSON, deduplicates phrases, updates frequency and source
+episodes, and preserves every learner's phrase-review progress. It makes no API
+calls.
+
+```bash
+python -m swedish_ai_tutor rebuild-phrases
 ```
 
 ### `dry-run` — Test Notion integration (no OpenAI cost)
@@ -464,7 +518,7 @@ All settings go in `.env`. Only the first 3 are required:
 | `NOTION_API_KEY` | ✅ | — | Notion integration token |
 | `NOTION_PARENT_PAGE_ID` | ✅ | — | Notion page to create lessons under |
 | `OPENAI_MODEL` | — | `gpt-4o` | LLM model (`gpt-4o-mini` for 15x cheaper) |
-| `WHISPER_MODEL` | — | `whisper-1` | Whisper model for transcription |
+| `WHISPER_MODEL` | — | `gpt-4o-transcribe-diarize` | Transcription model; diarization keeps interviewer/interviewee turns |
 | `SR_PROGRAM_ID` | — | `4916` | SR program (4916 = Radio Sweden lätt svenska) |
 | `MAX_NEWS` | — | `0` | Max stories per lesson (0 = all, 1-4 = random pick) |
 | `DATA_DIR` | — | `./data` | Local data directory |

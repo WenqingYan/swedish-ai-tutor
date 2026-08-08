@@ -9,6 +9,9 @@ class TranscriptSegment(BaseModel):
     text: str = Field(description="Transcribed text for this segment")
     start: float = Field(description="Start time in seconds")
     end: float = Field(description="End time in seconds")
+    speaker: str | None = Field(
+        default=None, description="Speaker label when diarization is available"
+    )
 
 
 class Transcript(BaseModel):

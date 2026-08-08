@@ -101,23 +101,21 @@ class SentenceAnalyzer:
                     raise
                 logger.warning(
                     "Analysis attempt %d/%d failed for: %s",
-                    attempt, _MAX_RETRIES, sentence[:50],
+                    attempt,
+                    _MAX_RETRIES,
+                    sentence[:50],
                 )
             except Exception as e:
                 if attempt == _MAX_RETRIES:
                     msg = f"Failed to analyze sentence after {_MAX_RETRIES} attempts: {e}"
                     raise SentenceAnalysisError(msg) from e
-                logger.warning(
-                    "Analysis attempt %d/%d error: %s", attempt, _MAX_RETRIES, e
-                )
+                logger.warning("Analysis attempt %d/%d error: %s", attempt, _MAX_RETRIES, e)
 
         # Should never reach here, but satisfy type checker
         msg = "Unexpected analysis failure"
         raise SentenceAnalysisError(msg)  # pragma: no cover
 
-    async def analyze_transcript(
-        self, transcript: Transcript
-    ) -> list[SentenceAnalysis]:
+    async def analyze_transcript(self, transcript: Transcript) -> list[SentenceAnalysis]:
         """Analyze all sentences in a transcript.
 
         Processes sentences sequentially to respect API rate limits.
@@ -132,9 +130,7 @@ class SentenceAnalyzer:
         """
         return await self.analyze_sentences(transcript.sentences)
 
-    async def analyze_sentences(
-        self, sentences: list[str]
-    ) -> list[SentenceAnalysis]:
+    async def analyze_sentences(self, sentences: list[str]) -> list[SentenceAnalysis]:
         """Analyze a list of sentences using batch mode for efficiency.
 
         Sends sentences in batches to reduce token overhead from repeated
@@ -154,12 +150,14 @@ class SentenceAnalyzer:
         results: list[SentenceAnalysis] = []
 
         for batch_start in range(0, len(sentences), batch_size):
-            batch = sentences[batch_start:batch_start + batch_size]
+            batch = sentences[batch_start : batch_start + batch_size]
             batch_num = batch_start // batch_size + 1
             total_batches = (len(sentences) + batch_size - 1) // batch_size
             logger.info(
                 "Batch %d/%d: %d sentences",
-                batch_num, total_batches, len(batch),
+                batch_num,
+                total_batches,
+                len(batch),
             )
 
             try:
@@ -177,7 +175,8 @@ class SentenceAnalyzer:
 
         logger.info(
             "Analysis complete: %d/%d sentences successful",
-            len(results), len(sentences),
+            len(results),
+            len(sentences),
         )
         return results
 
@@ -213,8 +212,7 @@ class SentenceAnalyzer:
                         {
                             "role": "system",
                             "content": (
-                                "You are a Swedish language teacher. "
-                                "Respond with valid JSON only."
+                                "You are a Swedish language teacher. Respond with valid JSON only."
                             ),
                         },
                         {"role": "user", "content": prompt},
@@ -288,19 +286,18 @@ class SentenceAnalyzer:
                     )
                     for p in item.get("phrases", [])
                 ]
-                vocabulary = [
-                    self._parse_vocabulary_entry(v)
-                    for v in item.get("vocabulary", [])
-                ]
-                results.append(SentenceAnalysis(
-                    original=item.get("original", fallback),
-                    translation=item.get("translation", ""),
-                    grammar=grammar,
-                    phrases=phrases,
-                    vocabulary=vocabulary,
-                    examples=self._parse_examples(item.get("examples", [])),
-                    sfi_notes=item.get("sfi_notes", ""),
-                ))
+                vocabulary = [self._parse_vocabulary_entry(v) for v in item.get("vocabulary", [])]
+                results.append(
+                    SentenceAnalysis(
+                        original=item.get("original", fallback),
+                        translation=item.get("translation", ""),
+                        grammar=grammar,
+                        phrases=phrases,
+                        vocabulary=vocabulary,
+                        examples=self._parse_examples(item.get("examples", [])),
+                        sfi_notes=item.get("sfi_notes", ""),
+                    )
+                )
             except Exception as e:
                 logger.warning("Failed to parse sentence %d in batch: %s", i + 1, e)
 
@@ -342,10 +339,7 @@ class SentenceAnalyzer:
                 for p in data.get("phrases", [])
             ]
 
-            vocabulary = [
-                self._parse_vocabulary_entry(v)
-                for v in data.get("vocabulary", [])
-            ]
+            vocabulary = [self._parse_vocabulary_entry(v) for v in data.get("vocabulary", [])]
 
             return SentenceAnalysis(
                 original=data.get("original", original_sentence),
@@ -360,7 +354,8 @@ class SentenceAnalyzer:
             msg = f"Failed to parse LLM response structure: {e}"
             raise SentenceAnalysisError(msg) from e
 
-    def _parse_vocabulary_entry(self, data: dict) -> VocabularyEntry:  # type: ignore[type-arg]
+    @staticmethod
+    def _parse_vocabulary_entry(data: dict) -> VocabularyEntry:  # type: ignore[type-arg]
         """Parse a single vocabulary entry from LLM response.
 
         Args:
@@ -428,10 +423,12 @@ class SentenceAnalyzer:
         results: list[ExampleSentence] = []
         for item in raw:
             if isinstance(item, dict):
-                results.append(ExampleSentence(
-                    swedish=item.get("swedish", ""),
-                    chinese=item.get("chinese", ""),
-                ))
+                results.append(
+                    ExampleSentence(
+                        swedish=item.get("swedish", ""),
+                        chinese=item.get("chinese", ""),
+                    )
+                )
             elif isinstance(item, str):
                 # Backward compat: plain string → no translation
                 results.append(ExampleSentence(swedish=item, chinese=""))

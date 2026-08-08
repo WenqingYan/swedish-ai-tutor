@@ -8,7 +8,11 @@ Analyze the following Swedish sentences. For each sentence produce structured le
 - Include 2-5 vocab items per sentence (more useful words = better)
 - Skip basic grammar (simple SVO, basic det finns)
 - Focus on: passive voice, complex clauses, V2 inversions, participles, formal patterns
-- 0-2 phrases, 1 example with Chinese translation per sentence
+- Extract 1-3 useful phrases per sentence whenever possible, plus 1 example with Chinese translation
+- Give phrases extra attention. Prefer reusable collocations, verb-particle combinations,
+  fixed expressions, idioms, formal news phrasing, and sentence frames useful for SFI C/D.
+- A phrase must contain at least two words, include a concise Chinese meaning, and be useful
+  outside this exact article. Do not duplicate a single vocabulary word as a phrase.
 
 ## Sentences to analyze
 
@@ -48,6 +52,9 @@ Respond with ONLY a JSON object:
 }
 
 Include verb/noun/adjective morphology only for that POS. Set others to null.
+The vocabulary "word" MUST be the dictionary form: verb infinitive, noun
+indefinite singular without en/ett, or adjective en-form. Never return the
+inflected surface form from the sentence as "word".
 
 ## Swedish verb group classification (CRITICAL — do NOT default to group 1)
 

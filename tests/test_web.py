@@ -8,7 +8,12 @@ from sqlalchemy import select
 
 from swedish_ai_tutor.config import Settings
 from swedish_ai_tutor.db.engine import create_db_engine, get_session_factory, init_db
-from swedish_ai_tutor.db.tables import UserWordProgress, WordRecord
+from swedish_ai_tutor.db.tables import (
+    PhraseRecord,
+    UserPhraseProgress,
+    UserWordProgress,
+    WordRecord,
+)
 from swedish_ai_tutor.web.app import create_app
 
 
@@ -37,8 +42,7 @@ def _add_word(db_path: Path, *, due: bool = True) -> WordRecord:
                 '"present":"utreder","past":"utredde","supine":"utrett"}'
             ),
             examples=(
-                '{"swedish":"Polisen ska utreda händelsen.",'
-                '"chinese":"警方将调查这一事件。"}'
+                '{"swedish":"Polisen ska utreda händelsen.","chinese":"警方将调查这一事件。"}'
             ),
         )
         session.add(word)
@@ -78,10 +82,10 @@ def test_session_returns_due_words_and_stats(tmp_path: Path) -> None:
     payload = response.json()
     assert payload["stats"]["due"] == 0
     assert payload["stats"]["new"] == 1
-    assert payload["words"][0]["id"] == word.id
-    assert payload["words"][0]["meaning"] == "调查"
-    assert payload["words"][0]["morphology"]["present"] == "utreder"
-    assert payload["words"][0]["example"] == {
+    assert payload["items"][0]["id"] == word.id
+    assert payload["items"][0]["meaning"] == "调查"
+    assert payload["items"][0]["morphology"]["present"] == "utreder"
+    assert payload["items"][0]["example"] == {
         "swedish": "Polisen ska utreda händelsen.",
         "chinese": "警方将调查这一事件。",
     }
@@ -140,7 +144,7 @@ def test_word_cannot_advance_twice_before_calendar_due_date(tmp_path: Path) -> N
 
     next_session = client.get("/api/session?limit=20")
     assert next_session.status_code == 200
-    assert next_session.json()["words"] == []
+    assert next_session.json()["items"] == []
     assert next_session.json()["stats"]["new"] == 0
 
 
@@ -150,6 +154,34 @@ def test_review_validation_and_missing_word(tmp_path: Path) -> None:
 
     assert client.post("/api/words/999/review", json={"quality": 4}).status_code == 404
     assert client.post("/api/words/999/review", json={"quality": 8}).status_code == 422
+
+
+def test_confirmed_delete_removes_word_and_all_review_progress(tmp_path: Path) -> None:
+    """Authenticated deletion removes the shared card and attached learner state."""
+    db_path = tmp_path / "vocabulary.db"
+    word = _add_word(db_path)
+    client = _client(db_path)
+    assert client.post(f"/api/words/{word.id}/review", json={"quality": 4}).status_code == 200
+
+    response = client.delete(f"/api/words/{word.id}")
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": "utreda"}
+    engine = create_db_engine(db_path)
+    with get_session_factory(engine)() as session:
+        assert session.get(WordRecord, word.id) is None
+        assert session.scalar(
+            select(UserWordProgress).where(UserWordProgress.word_id == word.id)
+        ) is None
+
+
+def test_delete_word_requires_login(tmp_path: Path) -> None:
+    """The destructive endpoint cannot be called without a valid session."""
+    db_path = tmp_path / "vocabulary.db"
+    word = _add_word(db_path)
+    client = _client(db_path, register=False)
+
+    assert client.delete(f"/api/words/{word.id}").status_code == 401
 
 
 def test_home_screen_assets_are_served(tmp_path: Path) -> None:
@@ -167,6 +199,39 @@ def test_home_screen_assets_are_served(tmp_path: Path) -> None:
     assert manifest.json()["display"] == "standalone"
 
 
+def test_phrase_session_and_review_have_independent_progress(tmp_path: Path) -> None:
+    db_path = tmp_path / "vocabulary.db"
+    engine = create_db_engine(db_path)
+    init_db(engine)
+    with get_session_factory(engine)() as session:
+        phrase = PhraseRecord(
+            phrase="ta fram ett förslag",
+            meaning="提出一项建议",
+            pattern_type="collocation",
+            examples=(
+                '{"swedish":"Regeringen ska ta fram ett förslag.","chinese":"政府将提出一项建议。"}'
+            ),
+        )
+        session.add(phrase)
+        session.commit()
+        phrase_id = phrase.id
+    client = _client(db_path)
+
+    queue = client.get("/api/session?limit=10&kind=phrases")
+    assert queue.status_code == 200
+    assert queue.json()["items"][0]["phrase"] == "ta fram ett förslag"
+    assert queue.json()["items"][0]["example"]["chinese"] == "政府将提出一项建议。"
+
+    reviewed = client.post(f"/api/phrases/{phrase_id}/review", json={"quality": 4})
+    assert reviewed.status_code == 200
+    with get_session_factory(engine)() as session:
+        progress = session.scalar(
+            select(UserPhraseProgress).where(UserPhraseProgress.phrase_id == phrase_id)
+        )
+        assert progress is not None
+        assert progress.interval == 1
+
+
 def test_first_account_receives_existing_review_progress(tmp_path: Path) -> None:
     db_path = tmp_path / "vocabulary.db"
     word = _add_word(db_path)
@@ -182,7 +247,7 @@ def test_first_account_receives_existing_review_progress(tmp_path: Path) -> None
     client = _client(db_path)
 
     stats = client.get("/api/stats").json()
-    queue = client.get("/api/session?limit=10").json()["words"]
+    queue = client.get("/api/session?limit=10").json()["items"]
     assert stats["due"] == 1
     assert stats["new"] == 0
     assert queue[0]["interval"] == 6
@@ -212,7 +277,7 @@ def test_accounts_have_independent_memory_curves(tmp_path: Path) -> None:
     assert login.status_code == 200
 
     husband_stats = client.get("/api/stats").json()
-    husband_words = client.get("/api/session?limit=10").json()["words"]
+    husband_words = client.get("/api/session?limit=10").json()["items"]
     assert husband_stats["new"] == 1
     assert husband_stats["learning"] == 0
     assert husband_words[0]["id"] == word.id

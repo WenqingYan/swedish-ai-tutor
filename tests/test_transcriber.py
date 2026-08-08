@@ -11,10 +11,11 @@ from swedish_ai_tutor.services.transcriber import WhisperAPITranscriber
 class MockSegment:
     """Mock a Whisper API segment."""
 
-    def __init__(self, text: str, start: float, end: float) -> None:
+    def __init__(self, text: str, start: float, end: float, speaker: str | None = None) -> None:
         self.text = text
         self.start = start
         self.end = end
+        self.speaker = speaker
 
 
 class MockTranscriptionResponse:
@@ -42,9 +43,7 @@ class TestWhisperAPITranscriber:
         return audio
 
     @pytest.mark.asyncio()
-    async def test_transcribe_success(
-        self, mock_client: AsyncMock, audio_file: Path
-    ) -> None:
+    async def test_transcribe_success(self, mock_client: AsyncMock, audio_file: Path) -> None:
         """Successful transcription returns Transcript with text and segments."""
         mock_response = MockTranscriptionResponse(
             text="Hej, det här är nyheter på lätt svenska.",
@@ -55,9 +54,7 @@ class TestWhisperAPITranscriber:
         )
         mock_client.audio.transcriptions.create = AsyncMock(return_value=mock_response)
 
-        transcriber = WhisperAPITranscriber(
-            api_key="test-key", client=mock_client
-        )
+        transcriber = WhisperAPITranscriber(api_key="test-key", client=mock_client)
         transcript = await transcriber.transcribe(audio_file)
 
         assert transcript.full_text == "Hej, det här är nyheter på lätt svenska."
@@ -68,18 +65,14 @@ class TestWhisperAPITranscriber:
         assert transcript.language == "sv"
 
     @pytest.mark.asyncio()
-    async def test_transcribe_no_segments(
-        self, mock_client: AsyncMock, audio_file: Path
-    ) -> None:
+    async def test_transcribe_no_segments(self, mock_client: AsyncMock, audio_file: Path) -> None:
         """Transcription without segments returns empty segments list."""
         mock_response = MagicMock()
         mock_response.text = "Bara text utan segment."
         mock_response.segments = None
         mock_client.audio.transcriptions.create = AsyncMock(return_value=mock_response)
 
-        transcriber = WhisperAPITranscriber(
-            api_key="test-key", client=mock_client
-        )
+        transcriber = WhisperAPITranscriber(api_key="test-key", client=mock_client)
         transcript = await transcriber.transcribe(audio_file)
 
         assert transcript.full_text == "Bara text utan segment."
@@ -88,9 +81,7 @@ class TestWhisperAPITranscriber:
     @pytest.mark.asyncio()
     async def test_transcribe_file_not_found(self, mock_client: AsyncMock) -> None:
         """Raises FileNotFoundError for missing audio file."""
-        transcriber = WhisperAPITranscriber(
-            api_key="test-key", client=mock_client
-        )
+        transcriber = WhisperAPITranscriber(api_key="test-key", client=mock_client)
 
         with pytest.raises(FileNotFoundError, match="Audio file not found"):
             await transcriber.transcribe(Path("/nonexistent/audio.mp3"))
@@ -118,6 +109,35 @@ class TestWhisperAPITranscriber:
         assert call_kwargs["model"] == "whisper-1"
         assert call_kwargs["language"] == "sv"
         assert call_kwargs["response_format"] == "verbose_json"
+        assert "intervju" in call_kwargs["prompt"]
+
+    @pytest.mark.asyncio()
+    async def test_diarized_model_preserves_speakers_and_uses_chunking(
+        self, mock_client: AsyncMock, audio_file: Path
+    ) -> None:
+        """Interview transcription keeps speaker labels and enables audio chunking."""
+        mock_response = MockTranscriptionResponse(
+            text="Hur känns det? Det känns bra.",
+            segments=[
+                MockSegment("Hur känns det?", 1.0, 2.0, "A"),
+                MockSegment("Det känns bra.", 2.0, 3.0, "B"),
+            ],
+        )
+        mock_client.audio.transcriptions.create = AsyncMock(return_value=mock_response)
+        transcriber = WhisperAPITranscriber(
+            api_key="test-key",
+            model="gpt-4o-transcribe-diarize",
+            client=mock_client,
+        )
+
+        transcript = await transcriber.transcribe(audio_file)
+
+        call_kwargs = mock_client.audio.transcriptions.create.call_args.kwargs
+        assert call_kwargs["response_format"] == "diarized_json"
+        assert call_kwargs["chunking_strategy"] == "auto"
+        assert "timestamp_granularities" not in call_kwargs
+        assert transcript.segments[0].speaker == "A"
+        assert transcript.segments[1].speaker == "B"
 
     @pytest.mark.asyncio()
     async def test_transcribe_filters_empty_segments(
@@ -134,9 +154,7 @@ class TestWhisperAPITranscriber:
         )
         mock_client.audio.transcriptions.create = AsyncMock(return_value=mock_response)
 
-        transcriber = WhisperAPITranscriber(
-            api_key="test-key", client=mock_client
-        )
+        transcriber = WhisperAPITranscriber(api_key="test-key", client=mock_client)
         transcript = await transcriber.transcribe(audio_file)
 
         assert len(transcript.segments) == 2

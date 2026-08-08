@@ -33,6 +33,9 @@
     .stat span { color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
     .label { display:block; margin-bottom:11px; font-size:13px; font-weight:800; }
     .choices { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+    .kind-switch { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:24px 0; padding:5px; border-radius:18px; background:var(--cream); }
+    .kind { min-height:48px; border:0; border-radius:14px; background:transparent; color:var(--muted); font-weight:800; cursor:pointer; }
+    .kind.selected { background:var(--paper); color:var(--ink); box-shadow:0 4px 14px rgba(38,61,51,.1); }
     .choice { min-height:54px; border:1px solid var(--line); border-radius:16px; background:var(--paper); color:var(--ink); font-weight:800; cursor:pointer; }
     .choice.selected { border-color:var(--ink); background:var(--ink); color:white; }
     .custom { display:flex; align-items:center; gap:12px; margin-top:10px; padding:10px 14px; border:1px solid var(--line); border-radius:16px; color:var(--muted); font-size:13px; font-weight:700; }
@@ -49,6 +52,7 @@
     .card { min-height:430px; padding:34px 26px 25px; display:flex; flex-direction:column; align-items:center; text-align:center; }
     .eyebrow { color:var(--muted); font-size:12px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
     .word { margin:auto 0 8px; font-family:Georgia,serif; font-size:clamp(43px,13vw,70px); line-height:1; letter-spacing:-2px; overflow-wrap:anywhere; }
+    .word.phrase-card { font-size:clamp(32px,9vw,50px); line-height:1.12; letter-spacing:-1px; }
     .pos { color:var(--muted); font-style:italic; }
     .answer { width:100%; margin:auto 0 0; padding-top:22px; border-top:1px solid var(--line); animation:rise .25s ease; }
     .meaning { margin:0 0 17px; font-size:24px; font-weight:700; }
@@ -64,6 +68,15 @@
     .rating { min-height:58px; border:1px solid var(--line); border-radius:16px; background:var(--paper); color:var(--ink); cursor:pointer; font-size:13px; font-weight:800; }
     .rating small { display:block; color:var(--muted); font-size:10px; font-weight:500; margin-top:3px; }
     .rating:active,.primary:active,.secondary:active,.choice:active { transform:scale(.98); }
+    .delete-zone { margin-top:28px; padding-top:20px; border-top:1px solid var(--line); text-align:center; }
+    .delete-link { min-height:44px; padding:8px 14px; border:0; background:transparent; color:#9a514b; font-size:12px; font-weight:750; cursor:pointer; }
+    .delete-confirm { padding:18px; border:1px solid #e6c4bf; border-radius:18px; background:#fff5f3; text-align:left; }
+    .delete-confirm strong { display:block; color:#7e302a; font-size:14px; }
+    .delete-confirm p { margin:7px 0 15px; color:#765b58; font-size:12px; line-height:1.5; }
+    .delete-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .cancel-delete,.confirm-delete { min-height:48px; border-radius:14px; font-weight:800; cursor:pointer; }
+    .cancel-delete { border:1px solid var(--line); background:var(--paper); color:var(--ink); }
+    .confirm-delete { border:0; background:#9b3f37; color:white; }
     .empty { margin:auto; }
     .empty .mark { font-size:58px; }
     .empty h2 { margin:12px 0 8px; font-family:Georgia,serif; font-size:31px; }
@@ -98,20 +111,24 @@
         <div class="account-actions"><button class="text-button" id="add-account">Add account</button><button class="text-button" id="sign-out">Sign out</button></div>
       </div>
       <h2 class="intro">Start a review</h2>
-      <p class="subtle">Choose a comfortable session size. Due words come first, followed by new words.</p>
+      <p class="subtle" id="start-copy">Choose a comfortable session size. Due words come first, followed by new words.</p>
+      <div class="kind-switch" role="group" aria-label="Review type">
+        <button class="kind selected" data-kind="words">单词 Words</button>
+        <button class="kind" data-kind="phrases">短语 Phrases</button>
+      </div>
       <div class="stats">
         <div class="stat"><strong id="due-stat">—</strong><span>Due</span></div>
         <div class="stat"><strong id="new-stat">—</strong><span>New</span></div>
         <div class="stat"><strong id="learning-stat">—</strong><span>Learning</span></div>
       </div>
-      <span class="label">Words in this session</span>
+      <span class="label" id="session-label">Words in this session</span>
       <div class="choices" role="group" aria-label="Session size">
         <button class="choice" data-size="5">5</button>
         <button class="choice selected" data-size="10">10</button>
         <button class="choice" data-size="20">20</button>
       </div>
       <label class="custom">Custom <input id="custom-size" type="number" min="1" max="100" inputmode="numeric" placeholder="1–100"></label>
-      <p class="note">Your memory curve follows calendar due dates, not session count. A word reviewed now will not appear in another session until it is due again.</p>
+      <p class="note" id="curve-note">Your memory curve follows calendar due dates, not session count. A word reviewed now will not appear in another session until it is due again.</p>
       <button class="primary" id="start">Start 10-word session</button>
     </section>
 
@@ -138,14 +155,26 @@
         <button class="rating" data-quality="4">Good<small>4</small></button>
         <button class="rating" data-quality="5">Easy<small>5</small></button>
       </div>
+      <div class="delete-zone" id="delete-zone" hidden>
+        <button class="delete-link" id="request-delete" type="button">不合适？从词库删除</button>
+        <div class="delete-confirm" id="delete-confirm" hidden role="alertdialog" aria-labelledby="delete-title">
+          <strong id="delete-title">确认删除这个单词？</strong>
+          <p id="delete-copy"></p>
+          <div class="delete-actions">
+            <button class="cancel-delete" id="cancel-delete" type="button">取消</button>
+            <button class="confirm-delete" id="confirm-delete" type="button">确认永久删除</button>
+          </div>
+        </div>
+      </div>
       <button class="secondary" id="another" hidden>Start another session</button>
     </section>
   </main>
   <script>
-    const state={words:[],index:0,size:10,revealed:false,busy:false,user:null};
+    const state={items:[],index:0,size:10,kind:'words',revealed:false,busy:false,deleteConfirm:false,user:null};
     const authScreen=document.querySelector('#auth-screen'), startScreen=document.querySelector('#start-screen'), reviewScreen=document.querySelector('#review-screen'), addAccountScreen=document.querySelector('#add-account-screen');
     const card=document.querySelector('#card'), reveal=document.querySelector('#reveal'), ratings=document.querySelector('#ratings'), another=document.querySelector('#another');
     const count=document.querySelector('#count'), available=document.querySelector('#available'), countLabel=document.querySelector('#count-label'), customSize=document.querySelector('#custom-size'), startButton=document.querySelector('#start');
+    const deleteZone=document.querySelector('#delete-zone'),requestDelete=document.querySelector('#request-delete'),deleteConfirm=document.querySelector('#delete-confirm'),confirmDelete=document.querySelector('#confirm-delete');
     document.querySelector('#date').textContent=new Intl.DateTimeFormat('en-SE',{weekday:'long',month:'long',day:'numeric'}).format(new Date());
     const clean=value => (value===null||value===undefined||value==='')?'—':String(value);
     function morphology(m){
@@ -163,7 +192,16 @@
     function setSize(size){
       state.size=Math.max(1,Math.min(100,Number(size)||10));
       document.querySelectorAll('.choice').forEach(button=>button.classList.toggle('selected',Number(button.dataset.size)===state.size));
-      startButton.textContent=`Start ${state.size}-word session`;
+      startButton.textContent=`Start ${state.size}-${state.kind==='words'?'word':'phrase'} session`;
+    }
+    function setKind(kind){
+      state.kind=kind;
+      document.querySelectorAll('.kind').forEach(button=>button.classList.toggle('selected',button.dataset.kind===kind));
+      const phraseMode=kind==='phrases';
+      document.querySelector('#start-copy').textContent=phraseMode?'Review useful expressions extracted from your news lessons. Due phrases come first.':'Choose a comfortable session size. Due words come first, followed by new words.';
+      document.querySelector('#session-label').textContent=phraseMode?'Phrases in this session':'Words in this session';
+      document.querySelector('#curve-note').textContent=`Your memory curve follows calendar due dates, not session count. A ${phraseMode?'phrase':'word'} reviewed now will not appear again until it is due.`;
+      setSize(state.size);loadStats();
     }
     async function jsonRequest(url,options={}){
       const response=await fetch(url,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});
@@ -191,37 +229,51 @@
     }
     async function loadStats(){
       try{
-        const stats=await jsonRequest('/api/stats');
+        const stats=await jsonRequest(`/api/stats?kind=${state.kind}`);
         available.textContent=stats.due;countLabel.textContent='due';
         document.querySelector('#due-stat').textContent=stats.due;document.querySelector('#new-stat').textContent=stats.new;document.querySelector('#learning-stat').textContent=stats.learning;
       }catch(error){if(error.status===401){showLogin(false);return;}startScreen.innerHTML='<div class="empty"><h2>Could not load</h2><p class="error">Check that the Mac review service is running, then refresh.</p></div>';}
     }
     function render(){
-      const total=state.words.length,word=state.words[state.index];
+      const total=state.items.length,item=state.items[state.index],phraseMode=state.kind==='phrases';
       document.querySelector('#progress').style.width=total?`${state.index/total*100}%`:'100%';
       available.textContent=total?`${Math.min(state.index+1,total)}/${total}`:'0';countLabel.textContent='session';
-      if(!word){card.innerHTML='<div class="empty"><div class="mark">✓</div><h2>Bra jobbat!</h2><p>You finished this session. Your next reviews stay scheduled by date.</p></div>';reveal.hidden=true;ratings.hidden=true;another.hidden=false;return;}
-      card.innerHTML=`<div class="eyebrow">Word ${state.index+1} of ${total}</div><div class="word">${escapeHtml(word.word)}</div><div class="pos">${escapeHtml(word.pos)}</div>${state.revealed?`<div class="answer"><p class="meaning">${escapeHtml(word.meaning)}</p><p class="morph">${escapeHtml(morphology(word.morphology))}</p>${exampleHtml(word.example)}<div class="meta">Seen ${word.frequency}× · current interval ${word.interval} days</div></div>`:''}`;
+      if(!item){card.innerHTML='<div class="empty"><div class="mark">✓</div><h2>Bra jobbat!</h2><p>You finished this session. Your next reviews stay scheduled by date.</p></div>';reveal.hidden=true;ratings.hidden=true;deleteZone.hidden=true;another.hidden=false;return;}
+      const front=phraseMode?item.phrase:item.word,type=phraseMode?item.pattern_type:item.pos;
+      const details=phraseMode?'':`<p class="morph">${escapeHtml(morphology(item.morphology))}</p>`;
+      card.innerHTML=`<div class="eyebrow">${phraseMode?'Phrase':'Word'} ${state.index+1} of ${total}</div><div class="word ${phraseMode?'phrase-card':''}">${escapeHtml(front)}</div><div class="pos">${escapeHtml(type)}</div>${state.revealed?`<div class="answer"><p class="meaning">${escapeHtml(item.meaning)}</p>${details}${exampleHtml(item.example)}<div class="meta">Seen ${item.frequency}× · current interval ${item.interval} days</div></div>`:''}`;
       reveal.hidden=state.revealed;ratings.hidden=!state.revealed;another.hidden=true;
+      deleteZone.hidden=phraseMode||!state.revealed;requestDelete.hidden=state.deleteConfirm;deleteConfirm.hidden=!state.deleteConfirm;
+      if(state.deleteConfirm)document.querySelector('#delete-copy').textContent=`“${front}” 将从共享词库永久删除，两位学习者的相关复习记录也会删除。此操作无法撤销。`;
     }
     async function startSession(){
       startButton.disabled=true;startButton.textContent='Preparing session…';
       try{
-        const data=await jsonRequest(`/api/session?limit=${state.size}`);
-        state.words=data.words;state.index=0;state.revealed=false;startScreen.hidden=true;reviewScreen.hidden=false;render();
+        const data=await jsonRequest(`/api/session?limit=${state.size}&kind=${state.kind}`);
+        state.items=data.items;state.index=0;state.revealed=false;state.deleteConfirm=false;startScreen.hidden=true;reviewScreen.hidden=false;render();
       }catch{alert('The session could not be loaded. Please try again.');}
-      finally{startButton.disabled=false;startButton.textContent=`Start ${state.size}-word session`;}
+      finally{startButton.disabled=false;setSize(state.size);}
     }
     document.querySelector('.choices').addEventListener('click',event=>{const button=event.target.closest('[data-size]');if(button){customSize.value='';setSize(button.dataset.size);}});
     customSize.addEventListener('input',()=>{if(customSize.value)setSize(customSize.value);});
+    document.querySelector('.kind-switch').addEventListener('click',event=>{const button=event.target.closest('[data-kind]');if(button)setKind(button.dataset.kind);});
     startButton.addEventListener('click',startSession);
     reveal.addEventListener('click',()=>{state.revealed=true;render();});
     ratings.addEventListener('click',async event=>{
       const button=event.target.closest('[data-quality]');if(!button||state.busy)return;state.busy=true;
       try{
-        await jsonRequest(`/api/words/${state.words[state.index].id}/review`,{method:'POST',body:JSON.stringify({quality:Number(button.dataset.quality)})});state.index++;state.revealed=false;render();
+        const item=state.items[state.index],endpoint=state.kind==='phrases'?`/api/phrases/${item.id}/review`:`/api/words/${item.id}/review`;
+        await jsonRequest(endpoint,{method:'POST',body:JSON.stringify({quality:Number(button.dataset.quality)})});state.index++;state.revealed=false;state.deleteConfirm=false;render();
       }catch(error){if(error.status===409){state.index++;state.revealed=false;render();return;}if(error.status===401){showLogin(false);return;}alert('The rating was not saved. Please try again.');}
       finally{state.busy=false;}
+    });
+    requestDelete.addEventListener('click',()=>{state.deleteConfirm=true;render();});
+    document.querySelector('#cancel-delete').addEventListener('click',()=>{state.deleteConfirm=false;render();});
+    confirmDelete.addEventListener('click',async()=>{
+      const item=state.items[state.index];if(!item||state.kind!=='words'||state.busy)return;state.busy=true;confirmDelete.disabled=true;confirmDelete.textContent='正在删除…';
+      try{await jsonRequest(`/api/words/${item.id}`,{method:'DELETE'});state.items.splice(state.index,1);state.revealed=false;state.deleteConfirm=false;render();}
+      catch(error){if(error.status===401){showLogin(false);return;}alert('删除失败，请重试。');}
+      finally{state.busy=false;confirmDelete.disabled=false;confirmDelete.textContent='确认永久删除';}
     });
     another.addEventListener('click',()=>{reviewScreen.hidden=true;startScreen.hidden=false;available.textContent='—';countLabel.textContent='due';loadStats();});
     document.querySelector('#auth-form').addEventListener('submit',async event=>{

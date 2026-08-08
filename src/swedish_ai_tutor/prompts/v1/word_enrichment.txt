@@ -1,0 +1,32 @@
+Complete a Swedish vocabulary card for a Chinese-speaking SFI C/D learner.
+
+Input word: {{word}}
+Part-of-speech hint (may be unknown): {{pos}}
+Chinese meaning hint (may be empty): {{meaning}}
+
+Return exactly one JSON object with this structure:
+{
+  "word": "dictionary/base form in Swedish",
+  "pos": "verb|noun|adj|adv|pronoun|preposition|conjunction|interjection|other",
+  "meaning": "concise Chinese meaning",
+  "verb": null,
+  "noun": null,
+  "adjective": null,
+  "example": {
+    "swedish": "a new, natural Swedish example sentence suitable for SFI C/D",
+    "chinese": "natural Chinese translation of the example"
+  }
+}
+
+For a verb, set "verb" to an object containing group (1-4), imperative,
+infinitive, present, past, and supine. For a noun, set "noun" to an object
+containing gender (en or ett), indefinite_singular, definite_singular,
+indefinite_plural, and definite_plural. For an adjective, set "adjective" to
+an object containing en_form, ett_form, plural_definite, comparative, and
+superlative. Leave the other morphology objects null. For other parts of
+speech, leave all three morphology objects null.
+
+Use the hint only when it is correct. Never invent a missing standard form;
+use "—" for a genuinely unavailable form. The example must be newly written,
+must clearly demonstrate the word, and must not claim to come from a course or
+news source. Return valid JSON only.

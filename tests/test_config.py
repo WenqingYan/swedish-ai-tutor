@@ -36,7 +36,10 @@ class TestSettings:
         assert settings.sr_program_id == 4916
         assert settings.sr_api_base == "https://api.sr.se/api/v2"
         # openai_model and whisper_model may be overridden by .env
-        assert settings.whisper_model in ("whisper-1",)
+        assert settings.whisper_model in (
+            "whisper-1",
+            "gpt-4o-transcribe-diarize",
+        )
         assert settings.log_level in ("INFO", "DEBUG")
 
     def test_missing_required_key_raises_error(self, monkeypatch: pytest.MonkeyPatch) -> None:

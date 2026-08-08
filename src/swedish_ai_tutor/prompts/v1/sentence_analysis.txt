@@ -113,6 +113,9 @@ Respond with ONLY a valid JSON object (no markdown, no code fences) with exactly
 - For ADJECTIVES: include the "adjective" field, set "verb" and "noun" to null.
 - For other POS (adv, prep, conj, pron): set all three to null.
 - NEVER omit morphology for verbs, nouns, or adjectives.
+- The vocabulary "word" MUST be the dictionary form: verb infinitive, noun
+  indefinite singular without en/ett, or adjective en-form. Never use the
+  inflected surface form from the sentence as "word".
 
 ## Swedish verb group classification (CRITICAL — do NOT default to group 1)
 
@@ -139,8 +142,11 @@ For particle verbs (e.g., ladda ner), classify based on the verb stem's group.
 ## Quality guidelines
 
 - Include 1-4 vocabulary items per sentence (only interesting/challenging ones).
-- Include 0-2 phrases per sentence (only if genuinely useful multi-word expressions exist).
+- Give reusable phrases high priority and include 1-3 per sentence when genuinely useful.
+  Prefer collocations, verb-particle combinations, fixed expressions, idioms, formal news
+  phrasing, and reusable SFI C/D sentence frames. Each phrase must contain at least two
+  words, have a concise Chinese meaning, and be useful outside this exact article.
 - Include 1 example sentence (with Chinese translation) that reinforces the key pattern.
 - Grammar explanation should be 1-2 sentences in Chinese, focused and concise.
 - If the sentence is simple with nothing notable, use fewer fields — quality over quantity.
-- It's OK to have an empty phrases list or just 1 vocabulary item if the sentence is straightforward.
+- An empty phrase list is acceptable only when the sentence has no reusable multi-word pattern.

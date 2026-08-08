@@ -6,7 +6,7 @@ to local whisper model.
 
 import logging
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from openai import AsyncOpenAI
 
@@ -78,16 +78,43 @@ class WhisperAPITranscriber:
 
         logger.info(
             "Transcribing: %s (model=%s, language=%s)",
-            audio_path, self._model, self._language,
+            audio_path,
+            self._model,
+            self._language,
         )
+
+        request: dict[str, Any] = {
+            "model": self._model,
+            "language": self._language,
+            "temperature": 0,
+        }
+        if self._model == "gpt-4o-transcribe-diarize":
+            request.update(
+                response_format="diarized_json",
+                chunking_strategy="auto",
+            )
+        elif self._model.startswith("gpt-4o"):
+            request.update(
+                response_format="json",
+                prompt=(
+                    "Skriv ut varje talad mening ordagrant på svenska. Ta med "
+                    "reporterns frågor, intervjupersonens svar och korta repliker."
+                ),
+            )
+        else:
+            request.update(
+                response_format="verbose_json",
+                timestamp_granularities=["segment"],
+                prompt=(
+                    "Radio Sweden, lätt svenska, reporter, intervju, fråga, svar, "
+                    "programledare, intervjuperson"
+                ),
+            )
 
         with audio_path.open("rb") as audio_file:
             response = await self._client.audio.transcriptions.create(
-                model=self._model,
                 file=audio_file,
-                language=self._language,
-                response_format="verbose_json",
-                timestamp_granularities=["segment"],
+                **request,
             )
 
         # Parse response — verbose_json includes segments with timestamps
@@ -126,6 +153,7 @@ class WhisperAPITranscriber:
             text = seg.get("text", "") if isinstance(seg, dict) else getattr(seg, "text", "")
             start = seg.get("start", 0.0) if isinstance(seg, dict) else getattr(seg, "start", 0.0)
             end = seg.get("end", 0.0) if isinstance(seg, dict) else getattr(seg, "end", 0.0)
+            speaker = seg.get("speaker") if isinstance(seg, dict) else getattr(seg, "speaker", None)
 
             if text.strip():
                 segments.append(
@@ -133,6 +161,7 @@ class WhisperAPITranscriber:
                         text=text.strip(),
                         start=float(start),
                         end=float(end),
+                        speaker=str(speaker) if speaker is not None else None,
                     )
                 )
 

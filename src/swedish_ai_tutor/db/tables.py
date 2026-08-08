@@ -24,9 +24,7 @@ class ArticleRecord(Base):
         DateTime, nullable=False, default=lambda: datetime.now(UTC)
     )
     notion_page_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="completed"
-    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="completed")
 
 
 class WordRecord(Base):
@@ -79,6 +77,28 @@ class UserWordProgress(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), nullable=False, index=True)
+    mastered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    next_review: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ease_factor: Mapped[float] = mapped_column(Float, nullable=False, default=2.5)
+    interval: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    repetitions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    first_reviewed_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(UTC)
+    )
+    last_reviewed_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class UserPhraseProgress(Base):
+    """SM-2 review state belonging to one learner and one shared phrase."""
+
+    __tablename__ = "user_phrase_progress"
+    __table_args__ = (UniqueConstraint("user_id", "phrase_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    phrase_id: Mapped[int] = mapped_column(ForeignKey("phrases.id"), nullable=False, index=True)
     mastered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     next_review: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     ease_factor: Mapped[float] = mapped_column(Float, nullable=False, default=2.5)

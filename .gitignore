@@ -28,6 +28,8 @@ data/lessons/
 data/vocabulary.db
 data/vocabulary.db.backup_*
 data/vocabulary.db.before-accounts-*.backup
+data/vocabulary.db.before-dedupe-*.backup
+data/vocabulary.db.before-phrases-*.backup
 
 # OS
 .DS_Store

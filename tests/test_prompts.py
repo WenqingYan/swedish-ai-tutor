@@ -15,6 +15,13 @@ class TestLoadPrompt:
         assert "Swedish" in prompt
         assert "JSON" in prompt
 
+    def test_load_word_enrichment(self) -> None:
+        """Manual word prompt requests morphology and a bilingual example."""
+        prompt = load_prompt("v1", "word_enrichment")
+        assert "{{word}}" in prompt
+        assert '"example"' in prompt
+        assert "supine" in prompt
+
     def test_load_nonexistent_raises(self) -> None:
         """Loading a nonexistent prompt raises FileNotFoundError."""
         with pytest.raises(FileNotFoundError, match="not found"):

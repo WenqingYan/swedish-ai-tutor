@@ -6,6 +6,7 @@ SR fetch → audio download → transcription → analysis → Notion export.
 
 import logging
 import random
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from swedish_ai_tutor.db.engine import create_db_engine, get_session_factory, in
 from swedish_ai_tutor.db.repositories.article_repo import ArticleRepository
 from swedish_ai_tutor.exporters.notion_exporter import NotionExporter
 from swedish_ai_tutor.models.lesson import Lesson, NewsStory
+from swedish_ai_tutor.models.transcript import TranscriptSegment
 from swedish_ai_tutor.services.sentence_analyzer import SentenceAnalyzer
 from swedish_ai_tutor.services.sr_fetcher import SRFetcher
 from swedish_ai_tutor.services.transcriber import WhisperAPITranscriber
@@ -137,47 +139,48 @@ async def run_pipeline(settings: Settings) -> PipelineResult:
     # Step 5: Segment into news stories and select
     logger.info("Step 5: Segmenting transcript into news stories...")
 
-    # Radio Sweden på lätt svenska uses "/" to separate stories in description
-    story_headlines = [
-        s.strip() for s in episode.description.split("/")
-        if s.strip() and len(s.strip()) > 5
-    ]
-    num_stories = len(story_headlines) if story_headlines else 4
+    # Detailed SR descriptions use "/" to separate stories. Some episodes only
+    # expose generic programme copy, which must not be treated as one headline.
+    story_headlines = _parse_story_headlines(episode.description)
+    num_stories = len(story_headlines) if story_headlines else 0
     logger.info(
         "Episode contains ~%d news stories: %s",
-        num_stories, " / ".join(story_headlines[:4]),
+        num_stories or "unknown",
+        " / ".join(story_headlines[:4]) or "(generic description)",
     )
 
     # Segment the transcript sentences into groups (one per news story)
     all_sentences = transcript.sentences
-    story_groups = _segment_stories(all_sentences, story_headlines)
+    story_groups = _segment_stories(
+        all_sentences,
+        story_headlines,
+        transcript.segments,
+    )
+    story_labels = (
+        story_headlines
+        if len(story_headlines) == len(story_groups)
+        else [_headline_from_group(group, index) for index, group in enumerate(story_groups, 1)]
+    )
 
     # Select stories based on max_news setting
     if settings.max_news > 0 and len(story_groups) > settings.max_news:
         selected_indices = sorted(random.sample(range(len(story_groups)), settings.max_news))
         selected_stories = [story_groups[i] for i in selected_indices]
+        selected_headlines = [story_labels[i] for i in selected_indices]
         logger.info(
             "Randomly selected %d/%d news stories for today's lesson",
-            settings.max_news, len(story_groups),
+            settings.max_news,
+            len(story_groups),
         )
     else:
         selected_stories = story_groups
-
-    # Build headline list matching selected stories
-    selected_headlines: list[str] = []
-    if settings.max_news > 0 and len(story_groups) > settings.max_news:
-        selected_headlines = [story_headlines[i] for i in selected_indices]
-    else:
-        selected_headlines = story_headlines[:len(selected_stories)]
-
-    # Pad headlines if we have fewer than stories
-    while len(selected_headlines) < len(selected_stories):
-        selected_headlines.append(f"Nyhet {len(selected_headlines) + 1}")
+        selected_headlines = story_labels
 
     total_sentences = sum(len(s) for s in selected_stories)
     logger.info(
         "Analyzing %d sentences from %d stories",
-        total_sentences, len(selected_stories),
+        total_sentences,
+        len(selected_stories),
     )
 
     # Step 6: Analyze sentences per story
@@ -193,14 +196,18 @@ async def run_pipeline(settings: Settings) -> PipelineResult:
     ):
         logger.info(
             "Story %d/%d: %s (%d sentences)",
-            idx, len(selected_stories), headline, len(story_sentences),
+            idx,
+            len(selected_stories),
+            headline,
+            len(story_sentences),
         )
         story_analyses = await analyzer.analyze_sentences(story_sentences)
         news_stories.append(NewsStory(headline=headline, analyses=story_analyses))
 
     logger.info(
         "Analysis complete: %d stories, %d total sentences",
-        len(news_stories), sum(len(s.analyses) for s in news_stories),
+        len(news_stories),
+        sum(len(s.analyses) for s in news_stories),
     )
 
     # Build lesson
@@ -213,16 +220,24 @@ async def run_pipeline(settings: Settings) -> PipelineResult:
     # Save lesson JSON locally (fallback/debug)
     _save_lesson_json(lesson, settings.lessons_dir)
 
-    # Step 7: Persist vocabulary to database
-    logger.info("Step 7: Saving vocabulary to database...")
+    # Step 7: Persist vocabulary and reusable phrases to database
+    logger.info("Step 7: Saving vocabulary and phrases to database...")
+    from swedish_ai_tutor.services.phrase_service import PhraseService
     from swedish_ai_tutor.services.vocabulary_service import VocabularyService
 
     with session_factory() as session:
         vocab_service = VocabularyService(session)
         vocab_stats = vocab_service.upsert_from_lesson(lesson)
+        phrase_stats = PhraseService(session).upsert_from_lesson(lesson)
     logger.info(
         "Vocabulary: %d new words, %d updated",
-        vocab_stats["new_words"], vocab_stats["updated_words"],
+        vocab_stats["new_words"],
+        vocab_stats["updated_words"],
+    )
+    logger.info(
+        "Phrases: %d new, %d updated",
+        phrase_stats["new_phrases"],
+        phrase_stats["updated_phrases"],
     )
 
     # Step 8: Export to Notion
@@ -280,9 +295,131 @@ def _configure_logging(settings: Settings) -> None:
     )
 
 
+def _parse_story_headlines(description: str) -> list[str]:
+    """Extract real story headlines while rejecting generic programme copy."""
+    candidates = [part.strip() for part in description.split("/") if len(part.strip()) > 5]
+    if len(candidates) > 1:
+        return candidates
+    if not candidates:
+        return []
+    generic_markers = (
+        "nyheter på lätt svenska",
+        "ny i sverige",
+        "radio sweden på lätt svenska",
+    )
+    lowered = candidates[0].casefold()
+    return [] if any(marker in lowered for marker in generic_markers) else candidates
+
+
+def _segment_without_headlines(
+    sentences: list[str],
+    segments: list[TranscriptSegment],
+) -> list[list[str]]:
+    """Segment a programme from topic openers and meaningful audio pauses."""
+    if not sentences:
+        return []
+
+    content_start = 0
+    while content_start < len(sentences) and _is_intro_sentence(sentences[content_start]):
+        content_start += 1
+
+    content_end = len(sentences)
+    while content_end > content_start and _is_outro_sentence(sentences[content_end - 1]):
+        content_end -= 1
+    if content_start >= content_end:
+        return [sentences]
+
+    candidates: set[int] = {content_start}
+    for index in range(content_start + 4, content_end):
+        if sentences[index].strip().casefold().startswith("nu "):
+            candidates.add(index)
+    candidates.update(_pause_boundary_indices(sentences, segments, content_start, content_end))
+
+    boundaries: list[int] = []
+    for candidate in sorted(candidates):
+        if not boundaries or candidate - boundaries[-1] >= 4:
+            boundaries.append(candidate)
+
+    if len(boundaries) == 1 and content_end - content_start >= 20:
+        # Last-resort behaviour for a normal multi-story broadcast with neither
+        # usable metadata nor detectable transition cues.
+        estimated_stories = 4
+        size = (content_end - content_start) // estimated_stories
+        boundaries.extend(content_start + size * index for index in range(1, estimated_stories))
+
+    groups = [
+        sentences[start:end]
+        for start, end in zip(boundaries, [*boundaries[1:], content_end], strict=True)
+        if end > start
+    ]
+    logger.info(
+        "Story segmentation without headlines: %s",
+        " | ".join(f"{len(group)} sent" for group in groups),
+    )
+    return groups
+
+
+def _pause_boundary_indices(
+    sentences: list[str],
+    segments: list[TranscriptSegment],
+    content_start: int,
+    content_end: int,
+) -> set[int]:
+    """Map strong pauses between timed segments onto sentence indices."""
+    boundaries: set[int] = set()
+    for previous, current in zip(segments, segments[1:], strict=False):
+        if current.start - previous.end < 2.5:
+            continue
+        sentence_index = _sentence_index_for_segment(
+            current.text, sentences, content_start, content_end
+        )
+        if sentence_index is not None:
+            boundaries.add(sentence_index)
+    return boundaries
+
+
+def _sentence_index_for_segment(
+    segment_text: str,
+    sentences: list[str],
+    start: int,
+    end: int,
+) -> int | None:
+    """Find the transcript sentence that best matches a timed segment."""
+    segment_words = set(re.findall(r"\w+", segment_text.casefold()))
+    if not segment_words:
+        return None
+    best_index: int | None = None
+    best_score = 0.0
+    for index in range(start, end):
+        sentence_words = set(re.findall(r"\w+", sentences[index].casefold()))
+        score = len(segment_words & sentence_words) / len(segment_words)
+        if score > best_score:
+            best_index = index
+            best_score = score
+    return best_index if best_score >= 0.6 else None
+
+
+def _is_intro_sentence(sentence: str) -> bool:
+    """Return whether a sentence is programme identification or its date."""
+    lowered = sentence.casefold()
+    if "radio sweden" in lowered and "lätt svenska" in lowered:
+        return True
+    weekdays = ("måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag", "söndag")
+    return lowered.startswith(weekdays) and " den " in lowered
+
+
+def _headline_from_group(group: list[str], index: int) -> str:
+    """Use the first content sentence as a deterministic local headline."""
+    if not group:
+        return f"Nyhet {index}"
+    headline = group[0].strip()
+    return headline if len(headline) <= 120 else f"{headline[:117].rstrip()}…"
+
+
 def _segment_stories(
     sentences: list[str],
     headlines: list[str],
+    segments: list[TranscriptSegment] | None = None,
 ) -> list[list[str]]:
     """Segment transcript sentences into story groups using headline matching.
 
@@ -292,21 +429,61 @@ def _segment_stories(
     Args:
         sentences: All transcript sentences.
         headlines: Story headlines parsed from episode description.
+        segments: Optional time-aligned transcript segments for pause detection.
 
     Returns:
         List of sentence groups, one per story.
     """
     num_stories = len(headlines)
-    if num_stories <= 1 or len(sentences) <= num_stories:
+    if not headlines:
+        return _segment_without_headlines(sentences, segments or [])
+    if num_stories == 1 or len(sentences) <= num_stories:
         return [sentences]
 
     # Extract significant keywords from each headline (skip short/common words)
     stop_words = {
-        "i", "på", "av", "för", "med", "och", "att", "som", "är", "har",
-        "kan", "ska", "vill", "det", "den", "de", "ett", "en", "inte",
-        "nu", "nya", "till", "från", "om", "mer", "sig", "bli", "alla",
-        "mot", "sin", "sitt", "sina", "får", "efter", "under", "över",
-        "utan", "också", "bara", "redan", "just", "även",
+        "i",
+        "på",
+        "av",
+        "för",
+        "med",
+        "och",
+        "att",
+        "som",
+        "är",
+        "har",
+        "kan",
+        "ska",
+        "vill",
+        "det",
+        "den",
+        "de",
+        "ett",
+        "en",
+        "inte",
+        "nu",
+        "nya",
+        "till",
+        "från",
+        "om",
+        "mer",
+        "sig",
+        "bli",
+        "alla",
+        "mot",
+        "sin",
+        "sitt",
+        "sina",
+        "får",
+        "efter",
+        "under",
+        "över",
+        "utan",
+        "också",
+        "bara",
+        "redan",
+        "just",
+        "även",
     }
 
     def _get_keywords(headline: str) -> list[str]:
@@ -350,7 +527,10 @@ def _segment_stories(
             # topic start. News stories often begin by introducing a person,
             # place, or situation before using the headline keywords.
             story_start = _find_topic_start(
-                sentences, best_idx, min_search, keywords,
+                sentences,
+                best_idx,
+                min_search,
+                keywords,
             )
             boundary_indices.append(story_start)
         else:
@@ -364,7 +544,8 @@ def _segment_stories(
         logger.warning(
             "Could only match %d/%d story boundaries by headline keywords. "
             "Using equal-split fallback for unmatched stories.",
-            found_count, num_stories,
+            found_count,
+            num_stories,
         )
         # Fill in missing boundaries with equal spacing
         chunk_size = len(sentences) // num_stories
@@ -412,6 +593,9 @@ def _is_outro_sentence(sentence: str) -> bool:
         "du kan läsa texten",
         "ladda ner appen",
         "lyssna på radio sweden",
+        "radio sweden på lätt svenska",
+        "läs också våra texter",
+        "appen sveriges radio",
         "gu.se",
         "sr.se",
         "vår hemsida",

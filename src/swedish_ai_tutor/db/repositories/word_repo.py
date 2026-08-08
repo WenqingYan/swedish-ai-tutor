@@ -30,7 +30,7 @@ class WordRepository:
         Returns:
             WordRecord or None if not found.
         """
-        stmt = select(WordRecord).where(WordRecord.word == word)
+        stmt = select(WordRecord).where(WordRecord.word == word.strip().lower())
         if pos:
             stmt = stmt.where(WordRecord.pos == pos)
         return self._session.execute(stmt).scalar_one_or_none()
@@ -115,6 +115,23 @@ class WordRepository:
                 episodes.append(episode_id)
                 record.source_episodes = json.dumps(episodes)
 
+        self._session.commit()
+        return record
+
+    def update_card_details(
+        self,
+        record: WordRecord,
+        meaning: str,
+        morphology: dict | None = None,  # type: ignore[type-arg]
+        example: dict[str, str] | None = None,
+    ) -> WordRecord:
+        """Refresh card content without changing review progress or frequency."""
+        if meaning:
+            record.meaning = meaning
+        if morphology:
+            record.morphology = json.dumps(morphology, ensure_ascii=False)
+        if example:
+            record.examples = json.dumps(example, ensure_ascii=False)
         self._session.commit()
         return record
 
@@ -224,14 +241,8 @@ class WordRepository:
 
         total = len(all_words)
         mastered = sum(1 for w in all_words if w.mastered)
-        due = sum(
-            1 for w in all_words
-            if not w.mastered and w.next_review and w.next_review <= now
-        )
-        new = sum(
-            1 for w in all_words
-            if not w.mastered and w.repetitions == 0 and w.interval == 0
-        )
+        due = sum(1 for w in all_words if not w.mastered and w.next_review and w.next_review <= now)
+        new = sum(1 for w in all_words if not w.mastered and w.repetitions == 0 and w.interval == 0)
 
         return {
             "total": total,

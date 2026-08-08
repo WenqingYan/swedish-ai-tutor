@@ -16,12 +16,16 @@ from sqlalchemy.orm import Session
 from swedish_ai_tutor.config import Settings  # noqa: TC001 - FastAPI resolves annotations
 from swedish_ai_tutor.db.engine import create_db_engine, get_session_factory, init_db
 from swedish_ai_tutor.db.tables import (  # noqa: TC001 - FastAPI resolves annotations
+    PhraseRecord,
+    UserPhraseProgress,
     UserRecord,
     UserWordProgress,
     WordRecord,
 )
 from swedish_ai_tutor.services.auth_service import SESSION_DAYS, AuthService
+from swedish_ai_tutor.services.phrase_service import UserPhraseService, phrase_example
 from swedish_ai_tutor.services.user_vocabulary_service import UserVocabularyService
+from swedish_ai_tutor.services.vocabulary_service import VocabularyService
 
 
 class ReviewRequest(BaseModel):
@@ -52,9 +56,7 @@ def _backup_database(db_path: Path) -> Path:
     return backup_path
 
 
-def _word_payload(
-    word: WordRecord, progress: UserWordProgress | None = None
-) -> dict[str, Any]:
+def _word_payload(word: WordRecord, progress: UserWordProgress | None = None) -> dict[str, Any]:
     """Serialize the fields needed by the review interface."""
     morphology: dict[str, Any] | None = None
     example: dict[str, str] | None = None
@@ -84,6 +86,21 @@ def _word_payload(
         "interval": progress.interval if progress else 0,
         "morphology": morphology,
         "example": example,
+    }
+
+
+def _phrase_payload(
+    phrase: PhraseRecord, progress: UserPhraseProgress | None = None
+) -> dict[str, Any]:
+    """Serialize one phrase review card."""
+    return {
+        "id": phrase.id,
+        "phrase": phrase.phrase,
+        "meaning": phrase.meaning,
+        "pattern_type": phrase.pattern_type,
+        "frequency": phrase.frequency,
+        "interval": progress.interval if progress else 0,
+        "example": phrase_example(phrase),
     }
 
 
@@ -161,8 +178,7 @@ def create_app(settings: Settings) -> FastAPI:
             "setup_required": not auth.has_users(),
             "authenticated": user is not None,
             "user": (
-                {"username": user.username, "display_name": user.display_name}
-                if user else None
+                {"username": user.username, "display_name": user.display_name} if user else None
             ),
         }
 
@@ -228,22 +244,35 @@ def create_app(settings: Settings) -> FastAPI:
         session: SessionDependency,
         user: UserDependency,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        kind: Annotated[str, Query(pattern="^(words|phrases)$")] = "words",
     ) -> dict[str, Any]:
         """Return statistics and today's due-first review queue."""
+        if kind == "phrases":
+            phrase_service = UserPhraseService(session, user.id)
+            return {
+                "stats": phrase_service.get_stats(),
+                "items": [
+                    _phrase_payload(phrase, progress)
+                    for phrase, progress in phrase_service.get_review_queue(limit)
+                ],
+            }
         service = UserVocabularyService(session, user.id)
         return {
             "stats": service.get_stats(),
-            "words": [
-                _word_payload(word, progress)
-                for word, progress in service.get_review_queue(limit)
+            "items": [
+                _word_payload(word, progress) for word, progress in service.get_review_queue(limit)
             ],
         }
 
     @app.get("/api/stats")
     def vocabulary_stats(
-        session: SessionDependency, user: UserDependency
+        session: SessionDependency,
+        user: UserDependency,
+        kind: Annotated[str, Query(pattern="^(words|phrases)$")] = "words",
     ) -> dict[str, int]:
         """Return counts for the session-start screen."""
+        if kind == "phrases":
+            return UserPhraseService(session, user.id).get_stats()
         return UserVocabularyService(session, user.id).get_stats()
 
     @app.post("/api/words/{word_id}/review")
@@ -257,6 +286,40 @@ def create_app(settings: Settings) -> FastAPI:
         service = UserVocabularyService(session, user.id)
         try:
             result = service.process_review(word_id, review.quality)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {
+            "next_review": result.next_review.isoformat(),
+            "interval": result.interval,
+            "repetitions": result.repetitions,
+        }
+
+    @app.delete("/api/words/{word_id}")
+    def delete_word(
+        word_id: int,
+        session: SessionDependency,
+        user: UserDependency,
+    ) -> dict[str, str]:
+        """Delete an unsuitable word from the catalog shared by all learners."""
+        del user  # Authentication is enforced by the dependency.
+        try:
+            word = VocabularyService(session).delete_word(word_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"deleted": word}
+
+    @app.post("/api/phrases/{phrase_id}/review")
+    def submit_phrase_review(
+        phrase_id: int,
+        review: ReviewRequest,
+        session: SessionDependency,
+        user: UserDependency,
+    ) -> dict[str, Any]:
+        """Apply a phrase review rating to this learner's memory curve."""
+        try:
+            result = UserPhraseService(session, user.id).process_review(phrase_id, review.quality)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except RuntimeError as exc:

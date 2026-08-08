@@ -36,6 +36,10 @@ def main() -> None:
         _run_web()
     elif command == "rebuild-vocab":
         _rebuild_vocab()
+    elif command == "rebuild-phrases":
+        _rebuild_phrases()
+    elif command == "dedupe-vocab":
+        _dedupe_vocab()
     elif command == "add-word":
         _add_word()
     else:
@@ -188,9 +192,9 @@ def _rebuild_vocab() -> None:
 
 
 def _add_word() -> None:
-    """Manually add a word to the vocabulary database."""
+    """Add a word, enriching it through the configured API by default."""
     if len(sys.argv) < 3:
-        print("Usage: python -m swedish_ai_tutor add-word <word> [pos] [meaning]")
+        print("Usage: python -m swedish_ai_tutor add-word <word> [pos] [meaning] [--no-api]")
         print()
         print("Examples:")
         print('  python -m swedish_ai_tutor add-word "utreda"')
@@ -198,8 +202,10 @@ def _add_word() -> None:
         sys.exit(1)
 
     word = sys.argv[2]
-    pos = sys.argv[3] if len(sys.argv) > 3 else "unknown"
-    meaning = sys.argv[4] if len(sys.argv) > 4 else ""
+    arguments = [arg for arg in sys.argv[3:] if arg != "--no-api"]
+    pos = arguments[0] if arguments else "unknown"
+    meaning = arguments[1] if len(arguments) > 1 else ""
+    use_api = "--no-api" not in sys.argv[3:]
 
     try:
         settings = get_settings()
@@ -210,15 +216,92 @@ def _add_word() -> None:
     from swedish_ai_tutor.db.engine import create_db_engine, get_session_factory, init_db
     from swedish_ai_tutor.services.vocabulary_service import VocabularyService
 
+    morphology = None
+    example = None
+    if use_api:
+        from swedish_ai_tutor.services.word_enricher import WordEnricher, WordEnrichmentError
+
+        print(f"🔎 Looking up {word} and generating a review example…")
+        try:
+            enriched = asyncio.run(
+                WordEnricher(settings.openai_api_key, settings.openai_model).enrich(
+                    word, pos, meaning
+                )
+            )
+        except WordEnrichmentError as exc:
+            print(f"❌ API enrichment failed: {exc}")
+            print("   Nothing was added. Retry, or use --no-api for a manual entry.")
+            sys.exit(1)
+        word = enriched.entry.word
+        pos = enriched.entry.pos
+        meaning = enriched.entry.meaning
+        morphology = VocabularyService._build_morphology_dict(enriched.entry)  # noqa: SLF001
+        example = enriched.example.model_dump()
+
     engine = create_db_engine(settings.db_path)
     init_db(engine)
     session_factory = get_session_factory(engine)
 
     with session_factory() as session:
         service = VocabularyService(session)
-        record = service.add_manual_word(word=word, pos=pos, meaning=meaning)
+        record = service.add_manual_word(
+            word=word,
+            pos=pos,
+            meaning=meaning,
+            morphology=morphology,
+            example=example,
+        )
         print(f"✅ Added: {record.word} [{record.pos}] — {record.meaning}")
+        if morphology:
+            print("   ✓ Morphology completed")
+        if example:
+            print(f"   例句: {example['swedish']}")
+            print(f"         {example['chinese']}")
         print(f"   First review scheduled: {record.next_review}")
+
+
+def _dedupe_vocab() -> None:
+    """Normalize dictionary forms and safely merge existing duplicate cards."""
+    try:
+        settings = get_settings()
+    except Exception as e:
+        print(f"Configuration error: {e}")
+        sys.exit(1)
+
+    from swedish_ai_tutor.dedupe_vocabulary import dedupe_vocabulary
+
+    try:
+        result = dedupe_vocabulary(settings.db_path)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"Deduplication error: {exc}")
+        sys.exit(1)
+    print(f"✅ Vocabulary normalized: {result.merged} duplicates merged")
+    print(f"   {result.renamed} inflected entries renamed to dictionary form")
+    print(f"   Backup: {result.backup_path}")
+
+
+def _rebuild_phrases() -> None:
+    """Backfill phrases from saved lesson JSON without API calls."""
+    try:
+        settings = get_settings()
+    except Exception as exc:
+        print(f"Configuration error: {exc}")
+        sys.exit(1)
+    from swedish_ai_tutor.rebuild_phrases import rebuild_phrases
+
+    try:
+        result = rebuild_phrases(settings)
+    except (FileNotFoundError, KeyError, ValueError) as exc:
+        print(f"Phrase rebuild error: {exc}")
+        sys.exit(1)
+    print("✅ Phrase catalog rebuilt locally (no API calls)")
+    print(
+        f"   {result['lesson_files']} lessons, {result['phrases']} phrases, "
+        f"{result['created']} created, {result['updated']} updated, "
+        f"{result['removed']} invalid removed"
+    )
+    if result["backup"]:
+        print(f"   Backup: {result['backup']}")
 
 
 def _print_usage() -> None:
@@ -235,7 +318,9 @@ def _print_usage() -> None:
     print("  vocab            Show vocabulary statistics")
     print("  web              Start the private mobile review web app")
     print("  rebuild-vocab    Repopulate vocabulary from local lesson JSON (no API calls)")
-    print("  add-word <word>  Manually add a word to the database")
+    print("  rebuild-phrases  Repopulate phrases from local lesson JSON (no API calls)")
+    print("  dedupe-vocab     Merge inflected duplicates while preserving review progress")
+    print("  add-word <word>  Add a word; API fills meaning, forms, and example")
     print()
     print("Examples:")
     print("  python -m swedish_ai_tutor run --news 2")

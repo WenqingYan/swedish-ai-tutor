@@ -98,7 +98,9 @@ class TestWordRepository:
         """Create a new word record."""
         repo = WordRepository(db_session)
         record = repo.create(
-            word="utreda", pos="verb", meaning="调查",
+            word="utreda",
+            pos="verb",
+            meaning="调查",
             morphology={"type": "verb", "group": 2, "present": "utreder"},
             episode_id=123,
         )
@@ -162,7 +164,9 @@ class TestVocabularyService:
         """Upserting a new word creates it."""
         service = VocabularyService(db_session)
         entry = VocabularyEntry(
-            word="telefonförsäljning", pos="noun", meaning="电话推销",
+            word="telefonförsäljning",
+            pos="noun",
+            meaning="电话推销",
             noun=NounMorphology(
                 gender="en",
                 indefinite_singular="en telefonförsäljning",
@@ -246,9 +250,24 @@ class TestVocabularyService:
     def test_add_manual_word(self, db_session: Session) -> None:
         """Manually added word enters the database."""
         service = VocabularyService(db_session)
-        record = service.add_manual_word(
-            word="kaffe", pos="noun", meaning="咖啡"
-        )
+        record = service.add_manual_word(word="kaffe", pos="noun", meaning="咖啡")
         assert record.word == "kaffe"
         assert record.frequency == 1
         assert record.next_review is not None
+
+    def test_manual_word_stores_api_enrichment(self, db_session: Session) -> None:
+        """Manual cards persist generated morphology and bilingual examples."""
+        service = VocabularyService(db_session)
+        record = service.add_manual_word(
+            word="utreda",
+            pos="verb",
+            meaning="调查",
+            morphology={"type": "verb", "present": "utreder"},
+            example={
+                "swedish": "Polisen ska utreda olyckan.",
+                "chinese": "警方将调查这起事故。",
+            },
+        )
+
+        assert json.loads(record.morphology or "{}")["present"] == "utreder"
+        assert json.loads(record.examples or "{}")["chinese"] == "警方将调查这起事故。"

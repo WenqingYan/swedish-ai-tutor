@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # --- OpenAI ---
     openai_api_key: str
     openai_model: str = "gpt-4o"
-    whisper_model: str = "whisper-1"
+    whisper_model: str = "gpt-4o-transcribe-diarize"
 
     # --- Notion ---
     notion_api_key: str
