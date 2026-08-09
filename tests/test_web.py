@@ -101,6 +101,19 @@ def test_lesson_player_pages_and_api_require_authentication(tmp_path: Path) -> N
     assert client.get("/api/lessons/123").status_code == 401
 
 
+def test_shadow_pause_does_not_force_article_scroll(tmp_path: Path) -> None:
+    client = _client(tmp_path / "vocabulary.db")
+
+    page = client.get("/lessons/123").text
+
+    pause_body = page.split("function beginShadowPause(index){", 1)[1].split(
+        "function ensureSentenceVisible", 1
+    )[0]
+    assert "ensureSentenceVisible" not in pause_body
+    assert "buttonRect.top<safeTop" in page
+    assert "buttonRect.bottom>safeBottom" in page
+
+
 def test_lesson_list_api_uses_saved_lesson_files(tmp_path: Path) -> None:
     db_path = tmp_path / "vocabulary.db"
     lessons_dir = tmp_path / "lessons"
