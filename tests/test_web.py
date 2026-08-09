@@ -91,6 +91,33 @@ def test_session_returns_due_words_and_stats(tmp_path: Path) -> None:
     }
 
 
+def test_lesson_player_pages_and_api_require_authentication(tmp_path: Path) -> None:
+    db_path = tmp_path / "vocabulary.db"
+    client = _client(db_path, register=False)
+
+    assert client.get("/lessons").status_code == 200
+    assert client.get("/lessons/123").status_code == 200
+    assert client.get("/api/lessons").status_code == 401
+    assert client.get("/api/lessons/123").status_code == 401
+
+
+def test_lesson_list_api_uses_saved_lesson_files(tmp_path: Path) -> None:
+    db_path = tmp_path / "vocabulary.db"
+    lessons_dir = tmp_path / "lessons"
+    lessons_dir.mkdir()
+    source = Path(__file__).parent / "fixtures" / "sample_lesson.json"
+    if source.exists():
+        (lessons_dir / "lesson_sample.json").write_text(
+            source.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+    client = _client(db_path)
+
+    response = client.get("/api/lessons")
+
+    assert response.status_code == 200
+    assert "lessons" in response.json()
+
+
 def test_review_updates_the_shared_database(tmp_path: Path) -> None:
     db_path = tmp_path / "vocabulary.db"
     word = _add_word(db_path)
@@ -230,6 +257,59 @@ def test_phrase_session_and_review_have_independent_progress(tmp_path: Path) -> 
         )
         assert progress is not None
         assert progress.interval == 1
+
+
+def test_confirmed_phrase_delete_removes_shared_phrase_and_progress(
+    tmp_path: Path,
+) -> None:
+    """Phrase deletion cleans its catalog row and every attached learner state."""
+    db_path = tmp_path / "vocabulary.db"
+    engine = create_db_engine(db_path)
+    init_db(engine)
+    with get_session_factory(engine)() as session:
+        phrase = PhraseRecord(
+            phrase="ta fram ett förslag",
+            meaning="提出一项建议",
+            pattern_type="collocation",
+        )
+        session.add(phrase)
+        session.commit()
+        phrase_id = phrase.id
+    client = _client(db_path)
+    assert client.post(
+        f"/api/phrases/{phrase_id}/review", json={"quality": 4}
+    ).status_code == 200
+
+    response = client.delete(f"/api/phrases/{phrase_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": "ta fram ett förslag"}
+    with get_session_factory(engine)() as session:
+        assert session.get(PhraseRecord, phrase_id) is None
+        assert session.scalar(
+            select(UserPhraseProgress).where(
+                UserPhraseProgress.phrase_id == phrase_id
+            )
+        ) is None
+
+
+def test_delete_phrase_requires_login(tmp_path: Path) -> None:
+    """Phrase deletion cannot bypass local-account authentication."""
+    db_path = tmp_path / "vocabulary.db"
+    engine = create_db_engine(db_path)
+    init_db(engine)
+    with get_session_factory(engine)() as session:
+        phrase = PhraseRecord(
+            phrase="ta fram ett förslag",
+            meaning="提出一项建议",
+            pattern_type="collocation",
+        )
+        session.add(phrase)
+        session.commit()
+        phrase_id = phrase.id
+    client = _client(db_path, register=False)
+
+    assert client.delete(f"/api/phrases/{phrase_id}").status_code == 401
 
 
 def test_first_account_receives_existing_review_progress(tmp_path: Path) -> None:

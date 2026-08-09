@@ -89,7 +89,7 @@
 <body>
   <main class="app">
     <header>
-      <div><h1>Svenska varje dag</h1><p class="date" id="date"></p></div>
+      <div><h1>Svenska varje dag</h1><p class="date" id="date"></p><a href="/lessons" style="display:inline-block;margin-top:7px;color:var(--ink);font-size:12px;font-weight:800;text-decoration:none">🎧 同步听力</a></div>
       <div class="count" id="count" hidden><span id="available">—</span><small id="count-label">due</small></div>
     </header>
 
@@ -243,8 +243,10 @@
       const details=phraseMode?'':`<p class="morph">${escapeHtml(morphology(item.morphology))}</p>`;
       card.innerHTML=`<div class="eyebrow">${phraseMode?'Phrase':'Word'} ${state.index+1} of ${total}</div><div class="word ${phraseMode?'phrase-card':''}">${escapeHtml(front)}</div><div class="pos">${escapeHtml(type)}</div>${state.revealed?`<div class="answer"><p class="meaning">${escapeHtml(item.meaning)}</p>${details}${exampleHtml(item.example)}<div class="meta">Seen ${item.frequency}× · current interval ${item.interval} days</div></div>`:''}`;
       reveal.hidden=state.revealed;ratings.hidden=!state.revealed;another.hidden=true;
-      deleteZone.hidden=phraseMode||!state.revealed;requestDelete.hidden=state.deleteConfirm;deleteConfirm.hidden=!state.deleteConfirm;
-      if(state.deleteConfirm)document.querySelector('#delete-copy').textContent=`“${front}” 将从共享词库永久删除，两位学习者的相关复习记录也会删除。此操作无法撤销。`;
+      deleteZone.hidden=!state.revealed;requestDelete.hidden=state.deleteConfirm;deleteConfirm.hidden=!state.deleteConfirm;
+      requestDelete.textContent=phraseMode?'不合适？从短语库删除':'不合适？从词库删除';
+      document.querySelector('#delete-title').textContent=phraseMode?'确认删除这个短语？':'确认删除这个单词？';
+      if(state.deleteConfirm)document.querySelector('#delete-copy').textContent=`“${front}” 将从共享${phraseMode?'短语':'单词'}库永久删除，两位学习者的相关复习记录也会删除。此操作无法撤销。`;
     }
     async function startSession(){
       startButton.disabled=true;startButton.textContent='Preparing session…';
@@ -270,8 +272,9 @@
     requestDelete.addEventListener('click',()=>{state.deleteConfirm=true;render();});
     document.querySelector('#cancel-delete').addEventListener('click',()=>{state.deleteConfirm=false;render();});
     confirmDelete.addEventListener('click',async()=>{
-      const item=state.items[state.index];if(!item||state.kind!=='words'||state.busy)return;state.busy=true;confirmDelete.disabled=true;confirmDelete.textContent='正在删除…';
-      try{await jsonRequest(`/api/words/${item.id}`,{method:'DELETE'});state.items.splice(state.index,1);state.revealed=false;state.deleteConfirm=false;render();}
+      const item=state.items[state.index];if(!item||state.busy)return;state.busy=true;confirmDelete.disabled=true;confirmDelete.textContent='正在删除…';
+      const resource=state.kind==='phrases'?'phrases':'words';
+      try{await jsonRequest(`/api/${resource}/${item.id}`,{method:'DELETE'});state.items.splice(state.index,1);state.revealed=false;state.deleteConfirm=false;render();}
       catch(error){if(error.status===401){showLogin(false);return;}alert('删除失败，请重试。');}
       finally{state.busy=false;confirmDelete.disabled=false;confirmDelete.textContent='确认永久删除';}
     });

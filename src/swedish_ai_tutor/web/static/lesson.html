@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>同步听力 · Svenska varje dag</title>
+  <style>
+    :root{--ink:#173f35;--muted:#687a72;--paper:#fffdf8;--cream:#f3ede2;--line:#ded7ca;--gold:#dca642}
+    *{box-sizing:border-box}body{margin:0;background:var(--cream);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .app{max-width:760px;margin:auto;padding:calc(16px + env(safe-area-inset-top)) 16px calc(80px + env(safe-area-inset-bottom))}.top{display:flex;align-items:center;margin-bottom:14px}.back{display:inline-flex;min-height:48px;align-items:center;padding:0 16px;border:1px solid var(--line);border-radius:15px;background:var(--paper);color:var(--ink);text-decoration:none;font-size:15px;font-weight:850;box-shadow:0 4px 12px rgba(30,49,42,.07)}
+    .player{position:sticky;top:10px;z-index:3;padding:20px;border:1px solid var(--line);border-radius:24px;background:rgba(255,253,248,.96);box-shadow:0 16px 40px rgba(30,49,42,.12);backdrop-filter:blur(12px)}
+    h1{margin:0 0 6px;font-family:Georgia,serif;font-size:25px;line-height:1.2}.meta{margin:0 0 15px;color:var(--muted);font-size:13px}audio{width:100%;height:42px}.speed-button{min-height:42px;border:1px solid var(--line);border-radius:13px;background:white;color:var(--ink);font-weight:800;cursor:pointer}.speed-controls{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:10px}.speed-button{min-height:40px;font-variant-numeric:tabular-nums}.speed-button.active{border-color:var(--ink);background:var(--ink);color:white;box-shadow:0 4px 12px rgba(23,63,53,.2)}.shadow-button{width:100%;min-height:48px;margin-top:10px;border:0;border-radius:15px;background:var(--gold);color:#203b32;font-size:15px;font-weight:900;cursor:pointer}.shadow-button.active{background:var(--ink);color:white}.shadow-status{margin:9px 0 0;padding:9px 12px;border-radius:12px;background:#fff6df;color:#725616;font-size:13px;font-weight:800;text-align:center}.modes{display:flex;gap:16px;margin-top:13px;color:var(--muted);font-size:13px}.modes label{display:flex;align-items:center;gap:6px}
+    .list{display:grid;gap:10px;margin-top:18px}.sentence{width:100%;padding:17px;border:1px solid var(--line);border-radius:18px;background:var(--paper);color:var(--ink);text-align:left;cursor:pointer;touch-action:manipulation;transition:.18s}.sentence.active{border-color:var(--gold);background:#fff6df;box-shadow:0 8px 24px rgba(89,65,20,.1);transform:translateY(-1px)}.sentence.unaligned{opacity:.62;cursor:default}.line{display:flex;gap:11px;align-items:flex-start}.time{min-width:44px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}.sv{font-size:17px;font-weight:750;line-height:1.65}.word-token{padding:2px 1px;border-radius:5px;transition:background-color .12s,color .12s,box-shadow .12s}.word-token.current-word{background:var(--gold);color:#162f28;box-shadow:0 0 0 2px rgba(220,166,66,.2)}.zh{display:block;margin:8px 0 0 55px;color:var(--muted);line-height:1.5}.status{padding:40px 15px;text-align:center;color:var(--muted)}
+    .lesson-picker{display:grid;gap:10px}.lesson-link{display:block;padding:17px;border:1px solid var(--line);border-radius:18px;background:var(--paper);color:var(--ink);text-decoration:none}.lesson-link strong{display:block;margin-bottom:5px}.lesson-link span{color:var(--muted);font-size:13px}
+    @media(max-width:500px){.app{padding:calc(10px + env(safe-area-inset-top)) 10px calc(60px + env(safe-area-inset-bottom))}.player{top:6px;padding:16px;border-radius:20px}.modes{justify-content:space-between;gap:5px}.sv{font-size:16px}.sentence{padding:15px 12px}.back{min-height:52px;padding:0 18px;font-size:16px}}
+  </style>
+</head>
+<body>
+<main class="app">
+  <div class="top"><a class="back" href="/">← 复习首页</a></div>
+  <section id="content"><p class="status">正在载入课程…</p></section>
+</main>
+<script>
+  const content=document.querySelector('#content');
+  const escapeHtml=value=>{const node=document.createElement('div');node.textContent=value??'';return node.innerHTML};
+  const renderWords=text=>text.trim().split(/\s+/).map((word,index)=>`<span class="word-token" data-word-index="${index}" data-weight="${Math.max(word.replace(/[^0-9A-Za-zÅÄÖåäö]/g,'').length,1)}">${escapeHtml(word)}</span>`).join(' ');
+  const formatTime=seconds=>seconds==null?'—':`${Math.floor(seconds/60)}:${String(Math.floor(seconds%60)).padStart(2,'0')}`;
+  async function request(url){const response=await fetch(url);if(response.status===401){location.href='/';throw new Error('请先登录');}const data=await response.json();if(!response.ok)throw new Error(data.detail||'载入失败');return data}
+  async function showIndex(){
+    const data=await request('/api/lessons');
+    content.innerHTML=`<h1>同步听力课程</h1><p class="meta">选择一集，开始逐句听读。</p><div class="lesson-picker">${data.lessons.map(item=>`<a class="lesson-link" href="/lessons/${item.episode_id}"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.date)} · ${item.sentence_count} 句 · ${formatTime(item.duration_seconds)}</span></a>`).join('')||'<p class="status">还没有保存的课程。</p>'}</div>`;
+  }
+  async function showLesson(id){
+    const lesson=await request(`/api/lessons/${id}`);
+    content.innerHTML=`<section class="player"><h1>${escapeHtml(lesson.title)}</h1><p class="meta">${escapeHtml(lesson.date)} · ${lesson.sentences.length} 句</p><audio id="audio" controls preload="metadata" src="${escapeHtml(lesson.audio_url)}"></audio><div class="speed-controls" aria-label="播放速度"><button class="speed-button" data-speed="0.75">0.75×</button><button class="speed-button" data-speed="0.9">0.9×</button><button class="speed-button active" data-speed="1">1.0×</button><button class="speed-button" data-speed="1.25">1.25×</button></div><button class="shadow-button" id="shadow-mode">🎙 开始影子跟读</button><p class="shadow-status" id="shadow-status" hidden></p><div class="modes"><label><input id="pause-mode" type="checkbox"> 逐句暂停</label><label><input id="loop-mode" type="checkbox"> 单句循环</label><label><input id="translation-mode" type="checkbox" checked> 中文</label></div></section><div class="list" id="sentences">${lesson.sentences.map((sentence,index)=>`<button class="sentence ${sentence.start==null?'unaligned':''}" data-index="${index}" ${sentence.start==null?'disabled':''}><span class="line"><span class="time">${formatTime(sentence.start)}</span><span class="sv">${renderWords(sentence.text)}</span></span><span class="zh">${escapeHtml(sentence.translation)}</span></button>`).join('')}</div>`;
+    const audio=document.querySelector('#audio'),buttons=[...document.querySelectorAll('.sentence')],pauseMode=document.querySelector('#pause-mode'),loopMode=document.querySelector('#loop-mode'),translationMode=document.querySelector('#translation-mode'),shadowButton=document.querySelector('#shadow-mode'),shadowStatus=document.querySelector('#shadow-status');
+    let active=-1,handledEnd=-1,shadowing=false,shadowTimer=null,countdownTimer=null;
+    let currentWord=null;
+    function updateWordHighlight(index,currentTime){
+      if(currentWord){currentWord.classList.remove('current-word');currentWord=null}
+      const sentence=lesson.sentences[index];if(!sentence||sentence.start==null||sentence.end<=sentence.start)return;
+      const words=[...buttons[index].querySelectorAll('.word-token')];if(!words.length)return;
+      const progress=Math.max(0,Math.min(.999,(currentTime-sentence.start)/(sentence.end-sentence.start))),weights=words.map(word=>Number(word.dataset.weight)||1),target=progress*weights.reduce((sum,weight)=>sum+weight,0);let accumulated=0,wordIndex=0;
+      for(let index=0;index<weights.length;index++){accumulated+=weights[index];if(target<accumulated){wordIndex=index;break}}
+      currentWord=words[wordIndex];currentWord.classList.add('current-word');
+    }
+    function clearShadowTimers(){clearTimeout(shadowTimer);clearInterval(countdownTimer);shadowTimer=null;countdownTimer=null}
+    function stopShadow(message=''){shadowing=false;clearShadowTimers();if(currentWord){currentWord.classList.remove('current-word');currentWord=null}shadowButton.classList.remove('active');shadowButton.textContent='🎙 开始影子跟读';shadowStatus.hidden=!message;shadowStatus.textContent=message}
+    function nextAlignedIndex(from){for(let index=from+1;index<lesson.sentences.length;index++){if(lesson.sentences[index].start!=null)return index}return -1}
+    function beginShadowPause(index){
+      const sentence=lesson.sentences[index],next=nextAlignedIndex(index);audio.pause();clearShadowTimers();
+      if(next<0){stopShadow('本集影子跟读完成 ✓');return}
+      const spokenSeconds=(sentence.end-sentence.start)/audio.playbackRate;const pauseSeconds=Math.max(3,Math.min(12,Math.ceil(spokenSeconds*1.15)));let remaining=pauseSeconds;
+      shadowStatus.hidden=false;shadowStatus.textContent=`请跟读当前句 · ${remaining} 秒后播放下一句`;
+      requestAnimationFrame(()=>ensureSentenceVisible(index));
+      countdownTimer=setInterval(()=>{remaining-=1;if(remaining>0)shadowStatus.textContent=`请跟读当前句 · ${remaining} 秒后播放下一句`},1000);
+      shadowTimer=setTimeout(()=>{clearShadowTimers();if(shadowing){shadowStatus.textContent='正在播放下一句…';play(next)}},pauseSeconds*1000);
+    }
+    function ensureSentenceVisible(index){
+      const button=buttons[index],player=document.querySelector('.player');if(!button||!player)return;
+      const buttonRect=button.getBoundingClientRect(),playerBottom=player.getBoundingClientRect().bottom,desiredTop=playerBottom+12;
+      if(Math.abs(buttonRect.top-desiredTop)>8)window.scrollBy({top:buttonRect.top-desiredTop,behavior:'smooth'});
+    }
+    function activate(index,scroll=false){if(index<0||index>=lesson.sentences.length)return;buttons.forEach((button,i)=>button.classList.toggle('active',i===index));active=index;if(scroll)requestAnimationFrame(()=>ensureSentenceVisible(index));}
+    function play(index){const sentence=lesson.sentences[index];if(sentence?.start==null)return;clearShadowTimers();if(currentWord){currentWord.classList.remove('current-word');currentWord=null}activate(index,true);handledEnd=-1;audio.currentTime=sentence.start;audio.play();if(shadowing){shadowStatus.hidden=false;shadowStatus.textContent='仔细听，然后跟读这一句'}}
+    function togglePlayback(){if(shadowing)stopShadow();if(audio.paused)audio.play();else audio.pause()}
+    buttons.forEach((button,index)=>button.addEventListener('click',()=>{
+      const sentence=lesson.sentences[index],insideSentence=index===active&&audio.currentTime>=sentence.start&&audio.currentTime<sentence.end;
+      if(insideSentence)togglePlayback();else play(index);
+    }));
+    audio.addEventListener('timeupdate',()=>{
+      const sentence=lesson.sentences[active];
+      if(!audio.seeking&&sentence?.end!=null&&audio.currentTime>=sentence.end&&handledEnd!==active){
+        handledEnd=active;if(shadowing){beginShadowPause(active);return}else if(loopMode.checked){audio.currentTime=sentence.start;handledEnd=-1;audio.play();return}else if(pauseMode.checked){audio.pause();return}
+      }
+      const index=lesson.sentences.findIndex(item=>item.start!=null&&audio.currentTime>=item.start&&audio.currentTime<item.end);
+      if(index>=0&&index!==active){activate(index,true);handledEnd=-1}if(index>=0)updateWordHighlight(index,audio.currentTime);
+    });
+    audio.addEventListener('pause',()=>{if(!shadowing&&currentWord){currentWord.classList.remove('current-word');currentWord=null}});
+    document.querySelectorAll('.speed-button').forEach(button=>button.addEventListener('click',()=>{audio.playbackRate=Number(button.dataset.speed);document.querySelectorAll('.speed-button').forEach(item=>item.classList.toggle('active',item===button))}));
+    shadowButton.onclick=()=>{if(shadowing){audio.pause();stopShadow();return}shadowing=true;pauseMode.checked=false;loopMode.checked=false;shadowButton.classList.add('active');shadowButton.textContent='■ 停止影子跟读';play(active>=0?active:lesson.sentences.findIndex(sentence=>sentence.start!=null))};
+    pauseMode.onchange=()=>{if(pauseMode.checked){loopMode.checked=false;if(shadowing)stopShadow()}};loopMode.onchange=()=>{if(loopMode.checked){pauseMode.checked=false;if(shadowing)stopShadow()}};
+    translationMode.onchange=()=>document.querySelectorAll('.zh').forEach(node=>node.hidden=!translationMode.checked);
+    const startAt=Number(new URLSearchParams(location.search).get('t'));const initial=Number.isFinite(startAt)&&startAt>0?lesson.sentences.findIndex(sentence=>sentence.start!=null&&startAt>=sentence.start&&startAt<sentence.end):lesson.sentences.findIndex(sentence=>sentence.start!=null);if(initial>=0){activate(initial);if(startAt>0)audio.currentTime=startAt;}
+  }
+  const match=location.pathname.match(/^\/lessons\/(\d+)$/);(match?showLesson(match[1]):showIndex()).catch(error=>content.innerHTML=`<p class="status">${escapeHtml(error.message)}</p>`);
+</script>
+</body>
+</html>

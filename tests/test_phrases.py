@@ -31,6 +31,16 @@ def test_lesson_phrases_are_saved_with_bilingual_context(tmp_path: Path) -> None
                 pattern_type="collocation",
             ),
             Phrase(phrase="enligt", meaning="根据"),
+            Phrase(
+                phrase="i vissa fall",
+                meaning="在某些情况下",
+                pattern_type="fixed_expression",
+            ),
+            Phrase(
+                phrase="har kräftskiva",
+                meaning="举办小龙虾派对",
+                pattern_type="collocation",
+            ),
         ],
     )
     lesson = Lesson(
@@ -51,10 +61,13 @@ def test_lesson_phrases_are_saved_with_bilingual_context(tmp_path: Path) -> None
         result = PhraseService(session).upsert_from_lesson(lesson)
         records = list(session.scalars(select(PhraseRecord)))
 
-    assert result == {"new_phrases": 1, "updated_phrases": 0}
-    assert len(records) == 1
-    assert records[0].phrase == "ta fram ett förslag"
-    assert json.loads(records[0].examples or "{}") == {
+    assert result == {"new_phrases": 2, "updated_phrases": 0}
+    assert {record.phrase for record in records} == {
+        "ta fram ett förslag",
+        "i vissa fall",
+    }
+    saved = next(record for record in records if record.phrase == "ta fram ett förslag")
+    assert json.loads(saved.examples or "{}") == {
         "swedish": analysis.original,
         "chinese": analysis.translation,
     }

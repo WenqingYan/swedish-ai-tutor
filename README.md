@@ -75,6 +75,13 @@ Rating shortcuts:
 Start the touch-friendly review app on the Mac. It reviews both words and
 reusable phrases from the same lesson database with date-based SM-2 scheduling.
 
+The same private web app provides a sentence-timed listening player at
+`/lessons`. It aligns saved lesson sentences with Whisper segments and supports
+current-sentence highlighting, click-to-seek, replay, previous/next navigation,
+sentence looping, pause-after-sentence practice, and optional Chinese text.
+Set `WEB_BASE_URL` to the app's HTTPS Tailscale address to add the player link
+to newly generated Notion lesson pages.
+
 The opening screen lets you switch between **Words** and **Phrases**, then choose
 5, 10, 20, or a custom number of cards. You can start several sessions in one
 day: due cards are always selected first, remaining spaces are filled with new
@@ -98,15 +105,51 @@ from normal review controls to prevent accidental taps. Because the catalog is
 shared, confirming permanently removes the word and its review progress for all
 local learner accounts.
 
+Phrase review has the same protected flow through **不合适？从短语库删除**.
+The action appears only after revealing the phrase, requires a separate
+confirmation, and removes the shared phrase plus every learner's attached
+phrase-review progress.
+
 Each newly analyzed article now saves its reusable collocations, particle verbs,
 fixed expressions, idioms, formal news phrases, and useful SFI sentence frames
 to the `phrases` table automatically. Phrase cards show the Chinese meaning,
 phrase type, and the original bilingual news context. To import phrases from
-all existing local lessons without using API tokens, run:
+all existing local lessons without using API tokens, use the rebuild command
+below.
+
+Phrase selection favors expressions that transfer across unrelated subjects,
+are conventional or partly non-literal, and are useful to memorize as a single
+unit. General frames such as `i vissa fall`, `på grund av`, and
+`komma överens om` are prioritized. Transparent topic-only combinations such as
+`ha kräftskiva` are left as ordinary vocabulary/context rather than phrase cards.
+Automatic verb phrases must use dictionary form (`tycka att`, not
+`tycker att`). Manually bolded Notion expressions remain learner-controlled and
+are not rejected by this automatic-selection rule.
 
 ```bash
 python -m swedish_ai_tutor rebuild-phrases
 ```
+
+### Import bold expressions from Notion
+
+When reading a generated Notion lesson, bold any Swedish multi-word expression
+you want to remember. At the beginning of every `run`, the tutor checks its
+previously created Notion lesson pages and imports newly bolded expressions into
+the shared phrase catalog.
+
+The scan is optimized to minimize API usage:
+
+- one lightweight Notion search normally checks which lesson pages changed;
+- unchanged pages are not scanned again;
+- single words and invalid text are ignored;
+- the local phrase database is checked before any AI request;
+- existing phrases are skipped;
+- all genuinely new phrases are translated and classified in one batched
+  OpenAI request;
+- when there are no new phrases, the scan makes zero OpenAI calls.
+
+The surrounding Notion sentence is saved as the phrase's example context. A
+temporary Notion or enrichment error does not stop the daily news lesson.
 
 #### 1. Install and connect Tailscale
 
@@ -525,6 +568,7 @@ All settings go in `.env`. Only the first 3 are required:
 | `DB_PATH` | — | `./data/vocabulary.db` | SQLite database path |
 | `LOG_LEVEL` | — | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
 | `WEB_SECURE_COOKIES` | — | `true` | Require HTTPS when storing web login cookies |
+| `WEB_BASE_URL` | — | empty | HTTPS/Tailscale base URL for player links in Notion |
 
 ---
 

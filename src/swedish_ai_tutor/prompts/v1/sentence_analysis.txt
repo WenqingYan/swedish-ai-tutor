@@ -142,10 +142,20 @@ For particle verbs (e.g., ladda ner), classify based on the verb stem's group.
 ## Quality guidelines
 
 - Include 1-4 vocabulary items per sentence (only interesting/challenging ones).
-- Give reusable phrases high priority and include 1-3 per sentence when genuinely useful.
+- Give reusable phrases high priority and include 0-3 per sentence when genuinely useful.
   Prefer collocations, verb-particle combinations, fixed expressions, idioms, formal news
   phrasing, and reusable SFI C/D sentence frames. Each phrase must contain at least two
   words, have a concise Chinese meaning, and be useful outside this exact article.
+  Prefer an empty list to a merely topical or mechanically combined expression.
+- Keep a phrase only if at least two conditions hold: it transfers across unrelated topics;
+  it is conventional/fixed or not fully predictable word by word; the learner benefits from
+  memorizing it as one unit or reusable frame.
+- Prioritize examples like "i vissa fall", "på grund av", "från och med",
+  "i samband med", "ta hänsyn till", and "komma överens om".
+- Reject transparent topic-specific combinations such as "ha kräftskiva", "äta kräftor",
+  "sälja flygplan", and "bo i Stockholm", plus accidental subject-verb fragments.
+- Use canonical infinitive form for verb phrases: "tycka att", not "tycker att";
+  "ha möjlighet att", not "har möjlighet att".
 - Include 1 example sentence (with Chinese translation) that reinforces the key pattern.
 - Grammar explanation should be 1-2 sentences in Chinese, focused and concise.
 - If the sentence is simple with nothing notable, use fewer fields — quality over quantity.

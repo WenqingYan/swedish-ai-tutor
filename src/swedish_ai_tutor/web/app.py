@@ -23,7 +23,16 @@ from swedish_ai_tutor.db.tables import (  # noqa: TC001 - FastAPI resolves annot
     WordRecord,
 )
 from swedish_ai_tutor.services.auth_service import SESSION_DAYS, AuthService
-from swedish_ai_tutor.services.phrase_service import UserPhraseService, phrase_example
+from swedish_ai_tutor.services.lesson_player import (
+    lesson_player_payload,
+    list_lessons,
+    load_lesson,
+)
+from swedish_ai_tutor.services.phrase_service import (
+    PhraseService,
+    UserPhraseService,
+    phrase_example,
+)
 from swedish_ai_tutor.services.user_vocabulary_service import UserVocabularyService
 from swedish_ai_tutor.services.vocabulary_service import VocabularyService
 
@@ -151,6 +160,26 @@ def create_app(settings: Settings) -> FastAPI:
     def index() -> str:
         """Serve the mobile review application shell."""
         return files("swedish_ai_tutor.web.static").joinpath("index.html").read_text()
+
+    @app.get("/lessons", response_class=HTMLResponse)
+    @app.get("/lessons/{episode_id}", response_class=HTMLResponse)
+    def lesson_player(episode_id: int | None = None) -> str:
+        """Serve the sentence-timed listening player shell."""
+        _ = episode_id
+        return files("swedish_ai_tutor.web.static").joinpath("lesson.html").read_text()
+
+    @app.get("/api/lessons")
+    def lessons(_user: UserDependency) -> dict[str, Any]:
+        """List locally saved lessons available to the signed-in learner."""
+        return {"lessons": list_lessons(settings.lessons_dir)}
+
+    @app.get("/api/lessons/{episode_id}")
+    def lesson(episode_id: int, _user: UserDependency) -> dict[str, Any]:
+        """Return one lesson with best-effort sentence timestamps."""
+        saved_lesson = load_lesson(settings.lessons_dir, episode_id)
+        if saved_lesson is None:
+            raise HTTPException(status_code=404, detail="Lesson not found.")
+        return lesson_player_payload(saved_lesson)
 
     @app.get("/manifest.webmanifest")
     def manifest() -> Response:
@@ -329,5 +358,19 @@ def create_app(settings: Settings) -> FastAPI:
             "interval": result.interval,
             "repetitions": result.repetitions,
         }
+
+    @app.delete("/api/phrases/{phrase_id}")
+    def delete_phrase(
+        phrase_id: int,
+        session: SessionDependency,
+        user: UserDependency,
+    ) -> dict[str, str]:
+        """Delete an unsuitable phrase from the catalog shared by all learners."""
+        del user  # Authentication is enforced by the dependency.
+        try:
+            phrase = PhraseService(session).delete_phrase(phrase_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"deleted": phrase}
 
     return app

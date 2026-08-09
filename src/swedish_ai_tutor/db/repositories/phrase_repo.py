@@ -67,6 +67,25 @@ def is_reviewable_phrase(phrase: str) -> bool:
     return len(normalized.split()) >= 2 and normalized not in {"det är"}
 
 
+def is_automatic_phrase_candidate(phrase: str) -> bool:
+    """Require automatic phrase extraction to use a reusable dictionary form."""
+    normalized = _normalize_phrase(phrase)
+    if not is_reviewable_phrase(normalized):
+        return False
+    first_word = normalized.split()[0]
+    finite_openers = {
+        "har",
+        "är",
+        "kan",
+        "kommer",
+        "ska",
+        "tror",
+        "tycker",
+        "vill",
+    }
+    return first_word not in finite_openers
+
+
 def _add_episode(raw: str | None, episode_id: int | None) -> str | None:
     """Add one episode ID to stored JSON without duplicates."""
     if episode_id is None:

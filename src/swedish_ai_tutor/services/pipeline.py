@@ -78,6 +78,31 @@ async def run_pipeline(settings: Settings) -> PipelineResult:
     init_db(engine)
     session_factory = get_session_factory(engine)
 
+    # Import learner-selected expressions before checking for a new episode, so
+    # running the command always picks up later edits to existing Notion notes.
+    logger.info("Step 0: Checking Notion for newly bolded phrases...")
+    try:
+        from swedish_ai_tutor.services.notion_phrase_scanner import NotionPhraseScanner
+
+        with session_factory() as session:
+            scan = await NotionPhraseScanner(
+                session,
+                settings.notion_api_key,
+                settings.openai_api_key,
+                settings.openai_model,
+            ).scan()
+        logger.info(
+            "Notion phrases: %d pages checked, %d changed, %d known, "
+            "%d imported, %d OpenAI calls",
+            scan.checked_pages,
+            scan.scanned_pages,
+            scan.already_known,
+            scan.imported,
+            scan.openai_calls,
+        )
+    except Exception as exc:
+        logger.warning("Notion phrase scan skipped after an error: %s", exc)
+
     # Step 1: Fetch episode
     logger.info("Step 1: Fetching episode from SR API...")
     fetcher = SRFetcher(
@@ -247,6 +272,7 @@ async def run_pipeline(settings: Settings) -> PipelineResult:
         exporter = NotionExporter(
             api_key=settings.notion_api_key,
             parent_page_id=settings.notion_parent_page_id,
+            web_base_url=settings.web_base_url,
         )
         notion_url = await exporter.create_lesson_page(lesson)
         logger.info("Notion page created: %s", notion_url)

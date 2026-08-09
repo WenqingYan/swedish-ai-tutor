@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     db_path: Path = Path("./data/vocabulary.db")
     log_level: str = "INFO"
     web_secure_cookies: bool = True
+    web_base_url: str = ""
 
     # --- Learning ---
     max_news: int = 0  # 0 = all news stories, N = randomly pick N stories from episode

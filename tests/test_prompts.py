@@ -51,6 +51,14 @@ class TestLoadPrompt:
         assert "imperative" in prompt.lower()
         assert "supine" in prompt.lower()
 
+    def test_prompt_prioritizes_transferable_phrases(self) -> None:
+        """Phrase guidance distinguishes reusable frames from topical fragments."""
+        for name in ("sentence_analysis", "batch_sentence_analysis"):
+            prompt = load_prompt("v1", name)
+            assert "i vissa fall" in prompt
+            assert "ha kräftskiva" in prompt
+            assert "unrelated topics" in prompt
+
 
 class TestRenderPrompt:
     """Test prompt template rendering."""

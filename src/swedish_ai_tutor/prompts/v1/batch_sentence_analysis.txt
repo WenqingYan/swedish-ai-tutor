@@ -8,11 +8,22 @@ Analyze the following Swedish sentences. For each sentence produce structured le
 - Include 2-5 vocab items per sentence (more useful words = better)
 - Skip basic grammar (simple SVO, basic det finns)
 - Focus on: passive voice, complex clauses, V2 inversions, participles, formal patterns
-- Extract 1-3 useful phrases per sentence whenever possible, plus 1 example with Chinese translation
+- Extract 0-3 high-value phrases per sentence, plus 1 example with Chinese translation.
+  Prefer an empty list to a topical or mechanically combined expression.
 - Give phrases extra attention. Prefer reusable collocations, verb-particle combinations,
   fixed expressions, idioms, formal news phrasing, and sentence frames useful for SFI C/D.
 - A phrase must contain at least two words, include a concise Chinese meaning, and be useful
   outside this exact article. Do not duplicate a single vocabulary word as a phrase.
+- Apply this transferability test. Keep a phrase only when at least two are true:
+  1. It is useful across several unrelated topics and situations.
+  2. It is conventional, fixed, or not fully predictable word by word.
+  3. A learner benefits from memorizing it as one unit or reusable frame.
+- Strong positive examples: "i vissa fall", "på grund av", "från och med",
+  "i samband med", "ta hänsyn till", "komma överens om".
+- Reject transparent, topic-specific combinations such as "ha kräftskiva", "äta kräftor",
+  "sälja flygplan", and "bo i Stockholm", as well as accidental subject-verb fragments.
+- Write verb phrases in canonical infinitive form: "tycka att", not "tycker att";
+  "ha möjlighet att", not "har möjlighet att".
 
 ## Sentences to analyze
 

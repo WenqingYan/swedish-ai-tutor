@@ -3,12 +3,12 @@
 import json
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from swedish_ai_tutor.db.repositories.phrase_repo import (
     PhraseRepository,
-    is_reviewable_phrase,
+    is_automatic_phrase_candidate,
 )
 from swedish_ai_tutor.db.tables import PhraseRecord, UserPhraseProgress
 from swedish_ai_tutor.models.lesson import Lesson
@@ -19,6 +19,7 @@ class PhraseService:
     """Persist all reusable phrases extracted from a lesson."""
 
     def __init__(self, session: Session) -> None:
+        self._session = session
         self._repo = PhraseRepository(session)
 
     def upsert_from_lesson(self, lesson: Lesson) -> dict[str, int]:
@@ -28,7 +29,7 @@ class PhraseService:
         for analysis in lesson.all_analyses:
             context = {"swedish": analysis.original, "chinese": analysis.translation}
             for phrase in analysis.phrases:
-                if not is_reviewable_phrase(phrase.phrase):
+                if not is_automatic_phrase_candidate(phrase.phrase):
                     continue
                 _, is_new = self._repo.upsert(
                     phrase.phrase,
@@ -40,6 +41,21 @@ class PhraseService:
                 created += int(is_new)
                 updated += int(not is_new)
         return {"new_phrases": created, "updated_phrases": updated}
+
+    def delete_phrase(self, phrase_id: int) -> str:
+        """Delete one shared phrase and every learner's attached progress."""
+        record = self._session.get(PhraseRecord, phrase_id)
+        if record is None:
+            raise ValueError(f"Phrase ID {phrase_id} not found")
+        phrase = record.phrase
+        self._session.execute(
+            delete(UserPhraseProgress).where(
+                UserPhraseProgress.phrase_id == phrase_id
+            )
+        )
+        self._session.delete(record)
+        self._session.commit()
+        return phrase
 
 
 class UserPhraseService:

@@ -27,6 +27,18 @@ class ArticleRecord(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="completed")
 
 
+class NotionPageScanRecord(Base):
+    """Cached Notion edit timestamp used to skip unchanged lesson pages."""
+
+    __tablename__ = "notion_page_scans"
+
+    page_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    last_edited_time: Mapped[str] = mapped_column(String(64), nullable=False)
+    scanned_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
 class WordRecord(Base):
     """Vocabulary word with morphology, frequency, and review state."""
 
