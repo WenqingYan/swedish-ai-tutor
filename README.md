@@ -1,6 +1,59 @@
 # Swedish AI Tutor 🇸🇪
 
-AI-assisted Swedish language acquisition system for SFI C/D learners. Transforms daily [Radio Sweden på lätt svenska](https://sverigesradio.se/radioswedenpalattsvenska) episodes into structured learning material, delivered as a Notion page every morning. Includes a local vocabulary database with spaced repetition review.
+**Turn one short Swedish news episode into a complete daily learning routine.**
+
+Swedish AI Tutor is a local-first learning companion for Chinese-speaking SFI
+C/D learners. It transforms daily
+[Radio Sweden på lätt svenska](https://sverigesradio.se/radioswedenpalattsvenska)
+episodes into sentence-by-sentence lessons, builds personal word and phrase
+decks, and schedules review according to each learner's memory curve.
+
+Learn on a Mac, review comfortably from an iPhone, and keep the learning
+database under your control.
+
+## Why learners use it
+
+- **Real Swedish in context** — learn from current, easy-to-follow news instead
+  of isolated textbook sentences.
+- **Chinese learning support** — every analyzed sentence, word, phrase, and
+  example can include a Chinese explanation.
+- **Listening plus speaking** — follow the transcript with synchronized audio,
+  slow playback, sentence practice, and guided shadowing pauses.
+- **A memory system that stays personal** — words and phrases use date-based
+  spaced repetition, so several sessions in one day do not distort the schedule.
+- **One shared library, separate progress** — family members can use the same
+  content while keeping independent review histories and memory curves.
+- **Private by default** — lessons and review data remain on the Mac; private
+  iPhone access is available through Tailscale.
+
+## User interface
+
+The mobile-friendly web app is designed for short daily sessions and can be
+saved to the iPhone Home Screen like an app.
+
+| Screen | What you can do |
+|--------|-----------------|
+| **Sign in / accounts** | Keep each learner's review progress separate with password-protected local accounts and secure cookies. |
+| **Session start** | Choose **Words** or **Phrases**, select 5, 10, 20, or a custom number of cards, and see what is due before starting. |
+| **Word review** | Reveal the Chinese meaning, morphology, and a bilingual sentence from the original news context; rate recall with Again, Hard, Good, or Easy. |
+| **Phrase review** | Memorize reusable collocations, sentence frames, particle verbs, and idioms with their original bilingual context. |
+| **Listening lessons** | Open a saved episode, follow the highlighted sentence and current word, tap any sentence to seek, change speed, loop a sentence, or hide the Chinese translation. |
+| **Shadowing practice** | Listen sentence by sentence, then use the on-screen countdown as dedicated time to repeat aloud before the next sentence plays. |
+
+Unsuitable word and phrase cards can be removed with a deliberately separated,
+two-step delete action to reduce accidental taps on mobile.
+
+### A typical 10-minute session
+
+1. Run the daily pipeline on the Mac to collect and analyze the latest lesson.
+2. Read the structured lesson in Notion and bold any expression worth keeping.
+3. Open the private web app on the iPhone and review today's due cards.
+4. Finish with synchronized listening or shadowing practice.
+5. Return later for another short session; scheduling still follows calendar
+   dates rather than the number of sessions completed.
+
+> This is currently a self-hosted project: you provide your own OpenAI and
+> Notion credentials and run the private web service from your Mac.
 
 ## What it does
 
@@ -17,7 +70,8 @@ Every weekday morning, this system:
 
 Each word in the Notion page links to [svenska.se](https://svenska.se) for dictionary lookup.
 
-You can then **review** learned vocabulary using built-in terminal flashcards with spaced repetition (SM-2 algorithm).
+You can then review learned vocabulary and phrases in the iPhone-friendly web
+app or with built-in terminal flashcards using spaced repetition (SM-2).
 
 ---
 
@@ -656,7 +710,7 @@ swedish_learning_assistant/
 │   └── review/
 │       ├── scheduler.py         # SM-2 spaced repetition algorithm
 │       └── session.py           # CLI flashcard review interface
-└── tests/                       # 90 unit tests
+└── tests/                       # Automated unit and integration tests
     ├── test_config.py
     ├── test_models.py
     ├── test_database.py
