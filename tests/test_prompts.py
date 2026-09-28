@@ -59,6 +59,17 @@ class TestLoadPrompt:
             assert "ha kräftskiva" in prompt
             assert "unrelated topics" in prompt
 
+    def test_analysis_prompts_reject_vocabulary_noise(self) -> None:
+        """Prompts exclude names, numeric facts, and adjective comparison cards."""
+        for name in ("sentence_analysis", "batch_sentence_analysis"):
+            prompt = load_prompt("v1", name).lower()
+            assert "people's names" in prompt or "names of people" in prompt
+            assert "standalone" in prompt and "years" in prompt
+            assert "proper nouns" in prompt
+            assert "comparative or superlative" in prompt
+            assert "positive base form" in prompt
+            assert "deduplicate" in prompt
+
 
 class TestRenderPrompt:
     """Test prompt template rendering."""

@@ -40,6 +40,8 @@ def main() -> None:
         _rebuild_phrases()
     elif command == "dedupe-vocab":
         _dedupe_vocab()
+    elif command == "complete-morphology":
+        _complete_morphology()
     elif command == "add-word":
         _add_word()
     else:
@@ -280,6 +282,31 @@ def _dedupe_vocab() -> None:
     print(f"   Backup: {result.backup_path}")
 
 
+def _complete_morphology() -> None:
+    """Fill incomplete word forms with local data and compact API batches."""
+    try:
+        settings = get_settings()
+    except Exception as exc:
+        print(f"Configuration error: {exc}")
+        sys.exit(1)
+    from swedish_ai_tutor.services.morphology_backfill import (
+        MorphologyBackfillError,
+        backfill_morphology,
+    )
+
+    try:
+        result = asyncio.run(backfill_morphology(settings))
+    except MorphologyBackfillError as exc:
+        print(f"❌ Morphology completion failed: {exc}")
+        sys.exit(1)
+    print(f"✅ Completed morphology for {result['words_updated']} words")
+    print(
+        f"   {result['local_fields']} fields recovered locally; "
+        f"{result['api_words']} words sent in {result['api_batches']} compact API batches"
+    )
+    print(f"   Backup: {result['backup']}")
+
+
 def _rebuild_phrases() -> None:
     """Backfill phrases from saved lesson JSON without API calls."""
     try:
@@ -320,6 +347,7 @@ def _print_usage() -> None:
     print("  rebuild-vocab    Repopulate vocabulary from local lesson JSON (no API calls)")
     print("  rebuild-phrases  Repopulate phrases from local lesson JSON (no API calls)")
     print("  dedupe-vocab     Merge inflected duplicates while preserving review progress")
+    print("  complete-morphology  Fill missing word forms with minimal API usage")
     print("  add-word <word>  Add a word; API fills meaning, forms, and example")
     print()
     print("Examples:")

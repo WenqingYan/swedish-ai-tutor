@@ -5,6 +5,7 @@ to local whisper model.
 """
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -13,6 +14,27 @@ from openai import AsyncOpenAI
 from swedish_ai_tutor.models.transcript import Transcript, TranscriptSegment
 
 logger = logging.getLogger(__name__)
+
+
+class IncompleteTranscriptionError(RuntimeError):
+    """Raised when a transcription appears to omit a substantial audio region."""
+
+
+@dataclass(frozen=True)
+class TranscriptionQuality:
+    """Completeness signals derived from transcript timing and text volume."""
+
+    duration: float
+    text_characters: int
+    characters_per_second: float
+    largest_gap: float
+    trailing_gap: float
+    reasons: tuple[str, ...]
+
+    @property
+    def suspicious(self) -> bool:
+        """Return whether the response likely contains a large omission."""
+        return bool(self.reasons)
 
 
 class Transcriber(Protocol):
@@ -44,6 +66,7 @@ class WhisperAPITranscriber:
         self,
         api_key: str,
         model: str = "whisper-1",
+        fallback_model: str = "whisper-1",
         language: str = "sv",
         client: AsyncOpenAI | None = None,
     ) -> None:
@@ -56,6 +79,7 @@ class WhisperAPITranscriber:
             client: Optional pre-configured OpenAI client (for testing).
         """
         self._model = model
+        self._fallback_model = fallback_model
         self._language = language
         self._client = client or AsyncOpenAI(api_key=api_key)
 
@@ -83,17 +107,39 @@ class WhisperAPITranscriber:
             self._language,
         )
 
+        transcript, quality = await self._transcribe_once(audio_path, self._model)
+        if quality.suspicious and self._model == "gpt-4o-transcribe-diarize":
+            logger.warning(
+                "Diarized transcription appears incomplete (%s); retrying with %s",
+                "; ".join(quality.reasons),
+                self._fallback_model,
+            )
+            transcript, quality = await self._transcribe_once(
+                audio_path, self._fallback_model
+            )
+
+        if quality.suspicious:
+            reasons = "; ".join(quality.reasons)
+            raise IncompleteTranscriptionError(
+                f"Transcription failed completeness checks: {reasons}"
+            )
+        return transcript
+
+    async def _transcribe_once(
+        self, audio_path: Path, model: str
+    ) -> tuple[Transcript, TranscriptionQuality]:
+        """Make one transcription request and assess its completeness."""
         request: dict[str, Any] = {
-            "model": self._model,
+            "model": model,
             "language": self._language,
             "temperature": 0,
         }
-        if self._model == "gpt-4o-transcribe-diarize":
+        if model == "gpt-4o-transcribe-diarize":
             request.update(
                 response_format="diarized_json",
                 chunking_strategy="auto",
             )
-        elif self._model.startswith("gpt-4o"):
+        elif model.startswith("gpt-4o"):
             request.update(
                 response_format="json",
                 prompt=(
@@ -120,6 +166,8 @@ class WhisperAPITranscriber:
         # Parse response — verbose_json includes segments with timestamps
         segments = self._parse_segments(response)
         full_text = response.text if hasattr(response, "text") else str(response)
+        response_duration = float(getattr(response, "duration", 0.0) or 0.0)
+        quality = assess_transcription(full_text, segments, response_duration)
 
         logger.info(
             "Transcription complete: %d characters, %d segments",
@@ -127,11 +175,12 @@ class WhisperAPITranscriber:
             len(segments),
         )
 
-        return Transcript(
+        transcript = Transcript(
             full_text=full_text,
             segments=segments,
             language=self._language,
         )
+        return transcript, quality
 
     def _parse_segments(self, response: object) -> list[TranscriptSegment]:
         """Parse segments from Whisper verbose_json response.
@@ -166,3 +215,42 @@ class WhisperAPITranscriber:
                 )
 
         return segments
+
+
+def assess_transcription(
+    text: str,
+    segments: list[TranscriptSegment],
+    response_duration: float = 0.0,
+) -> TranscriptionQuality:
+    """Detect major omissions without rejecting ordinary pauses or intro music."""
+    ordered = sorted(segments, key=lambda segment: segment.start)
+    segment_end = max((segment.end for segment in ordered), default=0.0)
+    duration = max(response_duration, segment_end)
+    gaps: list[float] = []
+    previous_end = 0.0
+    for segment in ordered:
+        gaps.append(max(0.0, segment.start - previous_end))
+        previous_end = max(previous_end, segment.end)
+    largest_gap = max(gaps, default=0.0)
+    trailing_gap = max(0.0, duration - segment_end)
+    characters = len("".join(text.split()))
+    density = characters / duration if duration > 0 else 0.0
+    reasons: list[str] = []
+    if duration >= 60 and characters < 300:
+        reasons.append(f"only {characters} non-space characters for {duration:.0f}s audio")
+    if duration >= 120 and density < 4.0:
+        reasons.append(f"low speech-text density ({density:.1f} chars/s)")
+    if largest_gap > 30:
+        reasons.append(f"{largest_gap:.0f}s internal timeline gap")
+    if trailing_gap > 30:
+        reasons.append(f"{trailing_gap:.0f}s missing at audio end")
+    if duration >= 60 and not ordered:
+        reasons.append("no timed segments returned")
+    return TranscriptionQuality(
+        duration=duration,
+        text_characters=characters,
+        characters_per_second=density,
+        largest_gap=largest_gap,
+        trailing_gap=trailing_gap,
+        reasons=tuple(reasons),
+    )

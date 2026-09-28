@@ -33,6 +33,22 @@ Include vocabulary that is:
 - Would benefit from seeing the full morphology
 - Commonly appears in news/formal Swedish
 
+Never add these to vocabulary:
+- Names of people, including first names, surnames, full names, initials, titles
+  attached to names, or possessive forms of names. A person's name is context,
+  not Swedish vocabulary.
+- Years, dates, times, ages, percentages, measurements, scores, phone numbers,
+  or other standalone numeric expressions (for example 2026, 18-årig, 35 procent).
+- An inflected comparative or superlative adjective as its own card (for example
+  större, största, bäst, högre, högsta). If the underlying adjective is useful,
+  add exactly one card under its positive dictionary en-form instead: stor, bra,
+  hög. Put the comparative and superlative only inside that card's morphology.
+- Proper nouns such as organizations, places, countries, brands, programs, and
+  publication names unless the item is also a genuinely reusable common noun.
+
+Before returning vocabulary, verify every item passes all four exclusions and
+deduplicate entries by dictionary form. Prefer fewer clean cards to noisy cards.
+
 ## Also skip basic grammar patterns unless used in an unusual way
 
 Do NOT explain these unless there's something non-obvious:
@@ -116,6 +132,9 @@ Respond with ONLY a valid JSON object (no markdown, no code fences) with exactly
 - The vocabulary "word" MUST be the dictionary form: verb infinitive, noun
   indefinite singular without en/ett, or adjective en-form. Never use the
   inflected surface form from the sentence as "word".
+- For an adjective appearing in comparative or superlative form, "word" and
+  "adjective.en_form" MUST both be its positive base form. Never create a second
+  card for the comparative or superlative.
 
 ## Swedish verb group classification (CRITICAL — do NOT default to group 1)
 

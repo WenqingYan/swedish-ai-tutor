@@ -153,6 +153,7 @@ async def run_pipeline(settings: Settings) -> PipelineResult:
     transcriber = WhisperAPITranscriber(
         api_key=settings.openai_api_key,
         model=settings.whisper_model,
+        fallback_model=settings.whisper_fallback_model,
     )
     transcript = await transcriber.transcribe(audio_path)
     logger.info(

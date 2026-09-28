@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from swedish_ai_tutor.services.transcriber import WhisperAPITranscriber
+from swedish_ai_tutor.services.transcriber import (
+    IncompleteTranscriptionError,
+    WhisperAPITranscriber,
+    assess_transcription,
+)
 
 
 class MockSegment:
@@ -21,9 +25,12 @@ class MockSegment:
 class MockTranscriptionResponse:
     """Mock the Whisper API verbose_json response."""
 
-    def __init__(self, text: str, segments: list[MockSegment]) -> None:
+    def __init__(
+        self, text: str, segments: list[MockSegment], duration: float = 0.0
+    ) -> None:
         self.text = text
         self.segments = segments
+        self.duration = duration
 
 
 class TestWhisperAPITranscriber:
@@ -160,3 +167,72 @@ class TestWhisperAPITranscriber:
         assert len(transcript.segments) == 2
         assert transcript.segments[0].text == "Hello"
         assert transcript.segments[1].text == "world"
+
+    def test_quality_check_detects_large_timeline_hole(self) -> None:
+        """A long missing region is rejected even when text exists before and after it."""
+        segments = [
+            MockSegment("Första delen " * 30, 0.0, 40.0),
+            MockSegment("Sista delen " * 30, 85.0, 120.0),
+        ]
+        parsed = WhisperAPITranscriber("test")._parse_segments(  # noqa: SLF001
+            MockTranscriptionResponse("", segments)
+        )
+        quality = assess_transcription(" ".join(item.text for item in segments), parsed, 120)
+
+        assert quality.suspicious
+        assert quality.largest_gap == 45
+        assert "timeline gap" in " ".join(quality.reasons)
+
+    @pytest.mark.asyncio()
+    async def test_incomplete_diarized_result_uses_complete_fallback(
+        self, mock_client: AsyncMock, audio_file: Path
+    ) -> None:
+        """Large omissions trigger one independent non-diarized transcription."""
+        incomplete = MockTranscriptionResponse(
+            text="Kort början.",
+            segments=[MockSegment("Kort början.", 0.0, 8.0, "A")],
+            duration=180.0,
+        )
+        complete_text = "Det här är en fullständig svensk utskrift. " * 80
+        complete = MockTranscriptionResponse(
+            text=complete_text,
+            segments=[MockSegment(complete_text, 0.0, 180.0)],
+            duration=180.0,
+        )
+        mock_client.audio.transcriptions.create = AsyncMock(
+            side_effect=[incomplete, complete]
+        )
+        transcriber = WhisperAPITranscriber(
+            "test",
+            model="gpt-4o-transcribe-diarize",
+            fallback_model="whisper-1",
+            client=mock_client,
+        )
+
+        transcript = await transcriber.transcribe(audio_file)
+
+        assert transcript.full_text == complete_text
+        calls = mock_client.audio.transcriptions.create.call_args_list
+        assert calls[0].kwargs["model"] == "gpt-4o-transcribe-diarize"
+        assert calls[1].kwargs["model"] == "whisper-1"
+        assert calls[1].kwargs["response_format"] == "verbose_json"
+
+    @pytest.mark.asyncio()
+    async def test_incomplete_fallback_stops_pipeline_data_creation(
+        self, mock_client: AsyncMock, audio_file: Path
+    ) -> None:
+        """Two incomplete responses raise instead of silently returning bad text."""
+        incomplete = MockTranscriptionResponse(
+            text="För kort.",
+            segments=[MockSegment("För kort.", 0.0, 5.0)],
+            duration=180.0,
+        )
+        mock_client.audio.transcriptions.create = AsyncMock(
+            side_effect=[incomplete, incomplete]
+        )
+        transcriber = WhisperAPITranscriber(
+            "test", model="gpt-4o-transcribe-diarize", client=mock_client
+        )
+
+        with pytest.raises(IncompleteTranscriptionError, match="completeness checks"):
+            await transcriber.transcribe(audio_file)

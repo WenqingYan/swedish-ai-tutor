@@ -11,7 +11,10 @@ from sqlalchemy.orm import Session
 
 from swedish_ai_tutor.db.engine import create_db_engine, get_session_factory, init_db
 from swedish_ai_tutor.db.tables import UserWordProgress, WordRecord
-from swedish_ai_tutor.services.vocabulary_normalizer import canonical_word_from_morphology
+from swedish_ai_tutor.services.vocabulary_normalizer import (
+    canonical_word_from_morphology,
+    repaired_adjective_morphology,
+)
 
 
 @dataclass(frozen=True)
@@ -71,6 +74,16 @@ def _dedupe_session(session: Session) -> tuple[int, int]:
             target.word = canonical_word
             target.pos = canonical_pos
             renamed += 1
+        if canonical_pos == "adj" and target.morphology:
+            try:
+                morphology = json.loads(target.morphology)
+            except json.JSONDecodeError:
+                morphology = None
+            if isinstance(morphology, dict):
+                target.morphology = json.dumps(
+                    repaired_adjective_morphology(canonical_word, morphology),
+                    ensure_ascii=False,
+                )
     session.commit()
     return merged, renamed
 

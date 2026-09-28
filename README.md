@@ -68,6 +68,13 @@ Every weekday morning, this system:
 7. **Creates** a structured Notion page with the day's lesson
 8. **Tracks** processed episodes (deduplication)
 
+Transcription is completeness-checked before analysis. The tutor rejects
+abnormally sparse text, timeline holes longer than 30 seconds, missing audio
+tails, or long recordings with no timed segments. When the speaker-diarized
+result looks incomplete, it automatically retries once with the independent
+`WHISPER_FALLBACK_MODEL`; if that result is also incomplete, the run stops
+instead of saving a lesson with large silent omissions.
+
 Each word in the Notion page links to [svenska.se](https://svenska.se) for dictionary lookup.
 
 You can then review learned vocabulary and phrases in the iPhone-friendly web
@@ -409,6 +416,19 @@ backup first.
 python -m swedish_ai_tutor rebuild-vocab
 ```
 
+### `complete-morphology` — Fill incomplete word forms efficiently
+
+Repairs missing verb, noun, and adjective forms in the existing vocabulary
+database. It first reuses any forms found in saved lesson JSON, skips complete
+cards and parts of speech that do not inflect, then sends only the remaining
+word, POS, and missing field names in compact batches. It does not regenerate
+meanings or examples. A genuinely unavailable form is stored as `—`, and a
+timestamped database backup is created before any changes are written.
+
+```bash
+python -m swedish_ai_tutor complete-morphology
+```
+
 ### `rebuild-phrases` — Populate phrases from saved lessons
 
 Scans saved lesson JSON, deduplicates phrases, updates frequency and source
@@ -616,6 +636,7 @@ All settings go in `.env`. Only the first 3 are required:
 | `NOTION_PARENT_PAGE_ID` | ✅ | — | Notion page to create lessons under |
 | `OPENAI_MODEL` | — | `gpt-4o` | LLM model (`gpt-4o-mini` for 15x cheaper) |
 | `WHISPER_MODEL` | — | `gpt-4o-transcribe-diarize` | Transcription model; diarization keeps interviewer/interviewee turns |
+| `WHISPER_FALLBACK_MODEL` | — | `whisper-1` | Completeness fallback used only when the diarized transcript appears to omit a large region |
 | `SR_PROGRAM_ID` | — | `4916` | SR program (4916 = Radio Sweden lätt svenska) |
 | `MAX_NEWS` | — | `0` | Max stories per lesson (0 = all, 1-4 = random pick) |
 | `DATA_DIR` | — | `./data` | Local data directory |
