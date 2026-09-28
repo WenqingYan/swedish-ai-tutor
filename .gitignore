@@ -27,6 +27,13 @@ data/logs/
 data/lessons/
 data/vocabulary.db
 data/vocabulary.db.backup_*
+data/vocabulary.db.before-accounts-*.backup
+data/vocabulary.db.before-dedupe-*.backup
+data/vocabulary.db.before-phrases-*.backup
+data/vocabulary.db.before-morphology*.backup
+data/vocabulary.db.before-dagens-notes-*.backup
+data/vocabulary.db.before-manual-notes-*.backup
+migration_exports/
 
 # OS
 .DS_Store

@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     # --- OpenAI ---
     openai_api_key: str
     openai_model: str = "gpt-4o"
-    whisper_model: str = "whisper-1"
+    whisper_model: str = "gpt-4o-transcribe-diarize"
+    whisper_fallback_model: str = "whisper-1"
 
     # --- Notion ---
     notion_api_key: str
@@ -35,6 +36,8 @@ class Settings(BaseSettings):
     data_dir: Path = Path("./data")
     db_path: Path = Path("./data/vocabulary.db")
     log_level: str = "INFO"
+    web_secure_cookies: bool = True
+    web_base_url: str = ""
 
     # --- Learning ---
     max_news: int = 0  # 0 = all news stories, N = randomly pick N stories from episode

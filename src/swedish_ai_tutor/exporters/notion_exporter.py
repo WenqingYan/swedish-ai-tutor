@@ -24,6 +24,7 @@ class NotionExporter:
         self,
         api_key: str,
         parent_page_id: str,
+        web_base_url: str = "",
         client: NotionClient | None = None,
     ) -> None:
         """Initialize the Notion exporter.
@@ -34,6 +35,7 @@ class NotionExporter:
             client: Optional pre-configured Notion client (for testing).
         """
         self._parent_page_id = parent_page_id
+        self._web_base_url = web_base_url.rstrip("/")
         self._client = client or NotionClient(auth=api_key)
 
     async def create_lesson_page(self, lesson: Lesson) -> str:
@@ -76,6 +78,15 @@ class NotionExporter:
                 ],
             },
         })
+        if self._web_base_url:
+            player_url = f"{self._web_base_url}/lessons/{lesson.episode.id}"
+            header_blocks.append(
+                self._callout_block(
+                    "🎧 打开句级同步听力播放器",
+                    emoji="🎧",
+                    url=player_url,
+                )
+            )
         if lesson.episode.description:
             header_blocks.append(self._paragraph_block(lesson.episode.description))
         header_blocks.append({"type": "divider", "divider": {}})
@@ -420,12 +431,22 @@ class NotionExporter:
             },
         }
 
-    def _callout_block(self, text: str, emoji: str = "💡") -> dict:  # type: ignore[type-arg]
+    def _callout_block(
+        self, text: str, emoji: str = "💡", url: str | None = None
+    ) -> dict:  # type: ignore[type-arg]
         """Create a callout block with an emoji icon."""
         return {
             "type": "callout",
             "callout": {
                 "icon": {"type": "emoji", "emoji": emoji},
-                "rich_text": [{"type": "text", "text": {"content": text}}],
+                "rich_text": [
+                    {
+                        "type": "text",
+                        "text": {
+                            "content": text,
+                            **({"link": {"url": url}} if url else {}),
+                        },
+                    }
+                ],
             },
         }

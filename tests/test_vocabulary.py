@@ -1,5 +1,6 @@
 """Tests for v2 vocabulary system: SM-2 scheduler, word repo, and vocab service."""
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -8,7 +9,15 @@ from sqlalchemy.orm import Session
 
 from swedish_ai_tutor.db.engine import create_db_engine, get_session_factory, init_db
 from swedish_ai_tutor.db.repositories.word_repo import WordRepository
-from swedish_ai_tutor.models.lesson import NounMorphology, VocabularyEntry
+from swedish_ai_tutor.models.episode import Episode
+from swedish_ai_tutor.models.lesson import (
+    GrammarNote,
+    Lesson,
+    NounMorphology,
+    SentenceAnalysis,
+    VocabularyEntry,
+)
+from swedish_ai_tutor.models.transcript import Transcript
 from swedish_ai_tutor.review.scheduler import calculate_next_review
 from swedish_ai_tutor.services.vocabulary_service import VocabularyService
 
@@ -89,7 +98,9 @@ class TestWordRepository:
         """Create a new word record."""
         repo = WordRepository(db_session)
         record = repo.create(
-            word="utreda", pos="verb", meaning="调查",
+            word="utreda",
+            pos="verb",
+            meaning="调查",
             morphology={"type": "verb", "group": 2, "present": "utreder"},
             episode_id=123,
         )
@@ -153,7 +164,9 @@ class TestVocabularyService:
         """Upserting a new word creates it."""
         service = VocabularyService(db_session)
         entry = VocabularyEntry(
-            word="telefonförsäljning", pos="noun", meaning="电话推销",
+            word="telefonförsäljning",
+            pos="noun",
+            meaning="电话推销",
             noun=NounMorphology(
                 gender="en",
                 indefinite_singular="en telefonförsäljning",
@@ -177,6 +190,40 @@ class TestVocabularyService:
         record = repo.get_by_word("brand", "noun")
         assert record is not None
         assert record.frequency == 2
+
+    def test_lesson_word_stores_news_sentence_with_chinese_translation(
+        self, db_session: Session
+    ) -> None:
+        """Lesson persistence attaches its original sentence as word context."""
+        entry = VocabularyEntry(word="utreda", pos="verb", meaning="调查")
+        analysis = SentenceAnalysis(
+            original="Polisen ska utreda händelsen.",
+            translation="警方将调查这一事件。",
+            grammar=GrammarNote(pattern="ska + infinitiv", explanation="表示将来"),
+            vocabulary=[entry],
+        )
+        lesson = Lesson(
+            episode=Episode(
+                id=123,
+                title="Nyheter",
+                description="Test",
+                publish_date=datetime.now(UTC),
+                audio_url="https://example.com/audio.mp3",
+                duration_seconds=60,
+                url="https://example.com/episode",
+            ),
+            transcript=Transcript(full_text=analysis.original),
+            analyses=[analysis],
+        )
+
+        VocabularyService(db_session).upsert_from_lesson(lesson)
+
+        record = WordRepository(db_session).get_by_word("utreda", "verb")
+        assert record is not None
+        assert json.loads(record.examples or "{}") == {
+            "swedish": "Polisen ska utreda händelsen.",
+            "chinese": "警方将调查这一事件。",
+        }
 
     def test_process_review_updates_schedule(self, db_session: Session) -> None:
         """Processing a review updates the word's schedule."""
@@ -203,9 +250,24 @@ class TestVocabularyService:
     def test_add_manual_word(self, db_session: Session) -> None:
         """Manually added word enters the database."""
         service = VocabularyService(db_session)
-        record = service.add_manual_word(
-            word="kaffe", pos="noun", meaning="咖啡"
-        )
+        record = service.add_manual_word(word="kaffe", pos="noun", meaning="咖啡")
         assert record.word == "kaffe"
         assert record.frequency == 1
         assert record.next_review is not None
+
+    def test_manual_word_stores_api_enrichment(self, db_session: Session) -> None:
+        """Manual cards persist generated morphology and bilingual examples."""
+        service = VocabularyService(db_session)
+        record = service.add_manual_word(
+            word="utreda",
+            pos="verb",
+            meaning="调查",
+            morphology={"type": "verb", "present": "utreder"},
+            example={
+                "swedish": "Polisen ska utreda olyckan.",
+                "chinese": "警方将调查这起事故。",
+            },
+        )
+
+        assert json.loads(record.morphology or "{}")["present"] == "utreder"
+        assert json.loads(record.examples or "{}")["chinese"] == "警方将调查这起事故。"

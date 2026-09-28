@@ -32,6 +32,7 @@ def rebuild_vocabulary(settings: Settings) -> dict[str, int]:
     entries: dict[tuple[str, str], VocabularyEntry] = {}
     occurrences: defaultdict[tuple[str, str], int] = defaultdict(int)
     episodes: defaultdict[tuple[str, str], set[int]] = defaultdict(set)
+    examples: dict[tuple[str, str], dict[str, str]] = {}
 
     for path in lesson_paths:
         data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
@@ -49,6 +50,10 @@ def rebuild_vocabulary(settings: Settings) -> dict[str, int]:
                 entries[key] = entry
                 occurrences[key] += 1
                 episodes[key].add(episode_id)
+                examples[key] = {
+                    "swedish": str(analysis.get("original", "")).strip(),
+                    "chinese": str(analysis.get("translation", "")).strip(),
+                }
 
     settings.db_path.parent.mkdir(parents=True, exist_ok=True)
     engine = create_db_engine(settings.db_path)
@@ -84,6 +89,7 @@ def rebuild_vocabulary(settings: Settings) -> dict[str, int]:
                         last_seen=now,
                         next_review=now + timedelta(days=1),
                         morphology=morphology_json,
+                        examples=json.dumps(examples[key], ensure_ascii=False),
                         source_episodes=episode_json,
                     )
                 )
@@ -92,6 +98,7 @@ def rebuild_vocabulary(settings: Settings) -> dict[str, int]:
                 record.meaning = entry.meaning
                 record.frequency = occurrences[key]
                 record.morphology = morphology_json
+                record.examples = json.dumps(examples[key], ensure_ascii=False)
                 record.source_episodes = episode_json
                 updated += 1
 

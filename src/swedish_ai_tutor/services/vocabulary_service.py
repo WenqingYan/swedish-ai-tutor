@@ -6,12 +6,14 @@ Called by the pipeline to persist words, and by the review CLI to manage reviews
 
 import logging
 
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from swedish_ai_tutor.db.repositories.word_repo import WordRepository
-from swedish_ai_tutor.db.tables import WordRecord
+from swedish_ai_tutor.db.tables import UserWordProgress, WordRecord
 from swedish_ai_tutor.models.lesson import Lesson, VocabularyEntry
 from swedish_ai_tutor.review.scheduler import ReviewResult, calculate_next_review
+from swedish_ai_tutor.services.vocabulary_normalizer import canonicalize_entry, normalize_pos
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,10 @@ class VocabularyService:
         self._repo = WordRepository(session)
 
     def upsert_word(
-        self, entry: VocabularyEntry, episode_id: int | None = None
+        self,
+        entry: VocabularyEntry,
+        episode_id: int | None = None,
+        example: dict[str, str] | None = None,
     ) -> WordRecord:
         """Create or update a word from pipeline analysis.
 
@@ -45,14 +50,16 @@ class VocabularyService:
         Args:
             entry: VocabularyEntry from sentence analysis.
             episode_id: Source episode ID.
+            example: Optional Swedish news sentence and Chinese translation.
 
         Returns:
             The created or updated WordRecord.
         """
+        entry = canonicalize_entry(entry)
         existing = self._repo.get_by_word(entry.word, entry.pos)
 
         if existing:
-            self._repo.update_frequency(existing, episode_id)
+            self._repo.update_frequency(existing, episode_id, example)
             logger.debug("Word updated: %s (freq=%d)", entry.word, existing.frequency)
             return existing
 
@@ -65,6 +72,7 @@ class VocabularyService:
             meaning=entry.meaning,
             morphology=morphology,
             episode_id=episode_id,
+            example=example,
         )
         logger.debug("New word added: %s [%s]", entry.word, entry.pos)
         return record
@@ -82,25 +90,33 @@ class VocabularyService:
         updated_count = 0
         episode_id = lesson.episode.id
 
-        for word_entry in lesson.new_words:
-            existing = self._repo.get_by_word(word_entry.word, word_entry.pos)
-            if existing:
-                self._repo.update_frequency(existing, episode_id)
-                updated_count += 1
-            else:
-                morphology = self._build_morphology_dict(word_entry)
-                self._repo.create(
-                    word=word_entry.word,
-                    pos=word_entry.pos,
-                    meaning=word_entry.meaning,
-                    morphology=morphology,
-                    episode_id=episode_id,
-                )
-                new_count += 1
+        for analysis in lesson.all_analyses:
+            example = {
+                "swedish": analysis.original,
+                "chinese": analysis.translation,
+            }
+            for word_entry in analysis.vocabulary:
+                word_entry = canonicalize_entry(word_entry)
+                existing = self._repo.get_by_word(word_entry.word, word_entry.pos)
+                if existing:
+                    self._repo.update_frequency(existing, episode_id, example)
+                    updated_count += 1
+                else:
+                    morphology = self._build_morphology_dict(word_entry)
+                    self._repo.create(
+                        word=word_entry.word,
+                        pos=word_entry.pos,
+                        meaning=word_entry.meaning,
+                        morphology=morphology,
+                        episode_id=episode_id,
+                        example=example,
+                    )
+                    new_count += 1
 
         logger.info(
             "Vocabulary persisted: %d new, %d updated",
-            new_count, updated_count,
+            new_count,
+            updated_count,
         )
         return {"new_words": new_count, "updated_words": updated_count}
 
@@ -160,6 +176,10 @@ class VocabularyService:
         """
         return self._repo.get_due_for_review()
 
+    def get_word(self, word_id: int) -> WordRecord | None:
+        """Return one vocabulary record by ID."""
+        return self._repo.get_by_id(word_id)
+
     def get_new_words(self) -> list[WordRecord]:
         """Get words never reviewed.
 
@@ -176,8 +196,27 @@ class VocabularyService:
         """
         return self._repo.get_stats()
 
+    def delete_word(self, word_id: int) -> str:
+        """Delete one shared word and every learner's attached review progress."""
+        record = self._repo.get_by_id(word_id)
+        if record is None:
+            raise ValueError(f"Word ID {word_id} not found")
+        word = record.word
+        session = self._repo._session
+        session.execute(
+            delete(UserWordProgress).where(UserWordProgress.word_id == word_id)
+        )
+        session.delete(record)
+        session.commit()
+        return word
+
     def add_manual_word(
-        self, word: str, pos: str, meaning: str, morphology: dict | None = None  # type: ignore[type-arg]
+        self,
+        word: str,
+        pos: str,
+        meaning: str,
+        morphology: dict | None = None,  # type: ignore[type-arg]
+        example: dict[str, str] | None = None,
     ) -> WordRecord:
         """Manually add a word outside the pipeline.
 
@@ -186,12 +225,16 @@ class VocabularyService:
             pos: Part of speech.
             meaning: Chinese meaning.
             morphology: Optional morphology dict.
+            example: Optional Swedish example and Chinese translation.
 
         Returns:
             Created WordRecord.
         """
+        word = word.strip().lower()
+        pos = normalize_pos(pos)
         existing = self._repo.get_by_word(word, pos)
         if existing:
+            self._repo.update_card_details(existing, meaning, morphology, example)
             logger.info("Word already exists: %s (freq=%d)", word, existing.frequency)
             return existing
 
@@ -200,11 +243,13 @@ class VocabularyService:
             pos=pos,
             meaning=meaning,
             morphology=morphology,
+            example=example,
         )
         logger.info("Manual word added: %s [%s] — %s", word, pos, meaning)
         return record
 
-    def _build_morphology_dict(self, entry: VocabularyEntry) -> dict | None:  # type: ignore[type-arg]
+    @staticmethod
+    def _build_morphology_dict(entry: VocabularyEntry) -> dict | None:  # type: ignore[type-arg]
         """Build a JSON-serializable morphology dict from a VocabularyEntry.
 
         Args:

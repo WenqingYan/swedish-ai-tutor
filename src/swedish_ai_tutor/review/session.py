@@ -6,17 +6,21 @@ import logging
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from sqlalchemy import select
 
 from swedish_ai_tutor.config import Settings
 from swedish_ai_tutor.db.engine import create_db_engine, get_session_factory, init_db
-from swedish_ai_tutor.db.tables import WordRecord
+from swedish_ai_tutor.db.tables import UserRecord, WordRecord
+from swedish_ai_tutor.services.user_vocabulary_service import UserVocabularyService
 from swedish_ai_tutor.services.vocabulary_service import VocabularyService
 
 logger = logging.getLogger(__name__)
 console = Console()
 
 
-def run_review_session(settings: Settings, max_words: int = 20) -> None:
+def run_review_session(
+    settings: Settings, max_words: int = 20, username: str | None = None
+) -> None:
     """Run an interactive flashcard review session.
 
     Presents due words one at a time. The learner sees the Swedish word,
@@ -25,89 +29,143 @@ def run_review_session(settings: Settings, max_words: int = 20) -> None:
     Args:
         settings: Application settings.
         max_words: Maximum number of words to review this session (default 20).
+        username: Account username. Required when multiple accounts exist.
     """
     engine = create_db_engine(settings.db_path)
     init_db(engine)
     session_factory = get_session_factory(engine)
 
     with session_factory() as session:
-        service = VocabularyService(session)
-        stats = service.get_stats()
-
-        # Show stats
-        console.print()
-        console.print(Panel(
-            f"📚 Total: {stats['total']} | "
-            f"🆕 New: {stats['new']} | "
-            f"📖 Learning: {stats['learning']} | "
-            f"✅ Mastered: {stats['mastered']} | "
-            f"📋 Due: {stats['due']}",
-            title="Vocabulary Stats",
-        ))
-
-        # Get due words + new words
-        due_words = service.get_due_reviews()
-        new_words = service.get_new_words()
-
-        # Combine: due first, then fill remaining slots with new words
-        review_queue: list[WordRecord] = list(due_words)[:max_words]
-        remaining_slots = max_words - len(review_queue)
-        if remaining_slots > 0:
-            new_to_add = [w for w in new_words if w not in review_queue][:remaining_slots]
-            review_queue.extend(new_to_add)
-
-        if not review_queue:
-            console.print("\n✨ No words due for review! Come back later.\n")
+        users = list(session.scalars(select(UserRecord).order_by(UserRecord.username)))
+        if users:
+            selected = next((user for user in users if user.username == username), None)
+            if username is None and len(users) == 1:
+                selected = users[0]
+            if selected is None:
+                names = ", ".join(user.username for user in users)
+                console.print(f"Available accounts: {names}")
+                console.print("Use: python -m swedish_ai_tutor review --user <username>")
+                return
+            _run_account_review_session(
+                UserVocabularyService(session, selected.id),
+                selected.display_name,
+                max_words,
+            )
             return
 
-        console.print(f"\n📝 Review session: {len(review_queue)} words\n")
-        console.print("Rating: [a]gain(0) [h]ard(2) [g]ood(4) [e]asy(5) [q]uit\n")
+        _run_legacy_review_session(VocabularyService(session), max_words)
 
-        reviewed = 0
-        correct = 0
 
-        for i, word in enumerate(review_queue, 1):
-            # Show the flashcard front (Swedish word)
-            console.print(f"── {i}/{len(review_queue)} ──")
-            console.print(f"  🇸🇪 [bold]{word.word}[/bold] [{word.pos}]")
+def _run_account_review_session(
+    service: UserVocabularyService, display_name: str, max_words: int
+) -> None:
+    """Run terminal review using one learner's isolated schedule."""
+    stats = service.get_stats()
+    console.print()
+    console.print(Panel(
+        f"👤 {display_name} | 📚 Total: {stats['total']} | "
+        f"🆕 New: {stats['new']} | 📖 Learning: {stats['learning']} | "
+        f"✅ Mastered: {stats['mastered']} | 📋 Due: {stats['due']}",
+        title="Vocabulary Stats",
+    ))
+    review_queue = service.get_review_queue(max_words)
+    if not review_queue:
+        console.print("\n✨ No words due for review! Come back later.\n")
+        return
 
-            # Wait for user to press Enter to reveal
-            try:
-                input("  (press Enter to reveal) ")
-            except (KeyboardInterrupt, EOFError):
-                console.print("\n\n👋 Session ended.")
-                break
-
-            # Show the answer
-            morphology = _format_morphology(word)
-            console.print(f"  🇨🇳 {word.meaning}")
-            if morphology:
-                console.print(f"  📝 {morphology}")
-            console.print(f"  📊 freq={word.frequency} | interval={word.interval}d")
-
-            # Get rating
-            rating = _get_rating()
-            if rating is None:
-                console.print("\n👋 Session ended.")
-                break
-
-            # Process the review
-            service.process_review(word.id, rating)
-            reviewed += 1
-            if rating >= 3:
-                correct += 1
-
-            console.print()
-
-        # Session summary
+    console.print(f"\n📝 Review session: {len(review_queue)} words\n")
+    console.print("Rating: [a]gain(0) [h]ard(2) [g]ood(4) [e]asy(5) [q]uit\n")
+    reviewed = 0
+    correct = 0
+    for index, (word, progress) in enumerate(review_queue, 1):
+        console.print(f"── {index}/{len(review_queue)} ──")
+        console.print(f"  🇸🇪 [bold]{word.word}[/bold] [{word.pos}]")
+        try:
+            input("  (press Enter to reveal) ")
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n\n👋 Session ended.")
+            break
+        morphology = _format_morphology(word)
+        console.print(f"  🇨🇳 {word.meaning}")
+        if morphology:
+            console.print(f"  📝 {morphology}")
+        _print_example(word)
+        interval = progress.interval if progress else 0
+        console.print(f"  📊 freq={word.frequency} | interval={interval}d")
+        rating = _get_rating()
+        if rating is None:
+            console.print("\n👋 Session ended.")
+            break
+        service.process_review(word.id, rating)
+        reviewed += 1
+        if rating >= 3:
+            correct += 1
         console.print()
-        console.print(Panel(
-            f"Reviewed: {reviewed} | "
-            f"Correct: {correct} | "
-            f"Failed: {reviewed - correct}",
-            title="Session Complete ✅",
-        ))
+
+    console.print()
+    console.print(Panel(
+        f"Reviewed: {reviewed} | Correct: {correct} | Failed: {reviewed - correct}",
+        title="Session Complete ✅",
+    ))
+    console.print()
+
+
+def _run_legacy_review_session(service: VocabularyService, max_words: int) -> None:
+    """Run the original single-learner flow before accounts are configured."""
+    stats = service.get_stats()
+    console.print()
+    console.print(Panel(
+        f"📚 Total: {stats['total']} | 🆕 New: {stats['new']} | "
+        f"📖 Learning: {stats['learning']} | ✅ Mastered: {stats['mastered']} | "
+        f"📋 Due: {stats['due']}",
+        title="Vocabulary Stats",
+    ))
+    due_words = service.get_due_reviews()
+    new_words = service.get_new_words()
+    review_queue: list[WordRecord] = list(due_words)[:max_words]
+    remaining_slots = max_words - len(review_queue)
+    if remaining_slots > 0:
+        review_queue.extend(
+            [word for word in new_words if word not in review_queue][:remaining_slots]
+        )
+    if not review_queue:
+        console.print("\n✨ No words due for review! Come back later.\n")
+        return
+
+    console.print(f"\n📝 Review session: {len(review_queue)} words\n")
+    console.print("Rating: [a]gain(0) [h]ard(2) [g]ood(4) [e]asy(5) [q]uit\n")
+    reviewed = 0
+    correct = 0
+    for index, word in enumerate(review_queue, 1):
+        console.print(f"── {index}/{len(review_queue)} ──")
+        console.print(f"  🇸🇪 [bold]{word.word}[/bold] [{word.pos}]")
+        try:
+            input("  (press Enter to reveal) ")
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n\n👋 Session ended.")
+            break
+        morphology = _format_morphology(word)
+        console.print(f"  🇨🇳 {word.meaning}")
+        if morphology:
+            console.print(f"  📝 {morphology}")
+        _print_example(word)
+        console.print(f"  📊 freq={word.frequency} | interval={word.interval}d")
+        rating = _get_rating()
+        if rating is None:
+            console.print("\n👋 Session ended.")
+            break
+        service.process_review(word.id, rating)
+        reviewed += 1
+        if rating >= 3:
+            correct += 1
         console.print()
+
+    console.print()
+    console.print(Panel(
+        f"Reviewed: {reviewed} | Correct: {correct} | Failed: {reviewed - correct}",
+        title="Session Complete ✅",
+    ))
+    console.print()
 
 
 def _get_rating() -> int | None:
@@ -189,6 +247,24 @@ def _format_morphology(word: WordRecord) -> str:
             f"  Superlativ:      {value('superlative')}"
         )
     return f"Ordklass: {word.pos}\n  Böjningsformer: —"
+
+
+def _print_example(word: WordRecord) -> None:
+    """Print a stored news example after morphology, if available."""
+    if not word.examples:
+        return
+    try:
+        example = json.loads(word.examples)
+    except json.JSONDecodeError:
+        return
+    if not isinstance(example, dict):
+        return
+    swedish = str(example.get("swedish", "")).strip()
+    chinese = str(example.get("chinese", "")).strip()
+    if swedish:
+        console.print(f"  [dim]例句：{swedish}[/dim]")
+    if chinese:
+        console.print(f"  [dim]中文：{chinese}[/dim]")
 
 
 def show_vocab_stats(settings: Settings) -> None:

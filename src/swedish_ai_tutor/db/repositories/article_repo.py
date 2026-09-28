@@ -83,6 +83,11 @@ class ArticleRepository:
         stmt = select(ArticleRecord).where(ArticleRecord.status == "pending_export")
         return list(self._session.execute(stmt).scalars().all())
 
+    def get_notion_pages(self) -> list[ArticleRecord]:
+        """Return processed articles that have an associated Notion page."""
+        stmt = select(ArticleRecord).where(ArticleRecord.notion_page_id.isnot(None))
+        return list(self._session.scalars(stmt).all())
+
     def get_by_date(self, date: datetime) -> ArticleRecord | None:
         """Get article processed for a specific date.
 

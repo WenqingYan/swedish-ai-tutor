@@ -15,6 +15,13 @@ class TestLoadPrompt:
         assert "Swedish" in prompt
         assert "JSON" in prompt
 
+    def test_load_word_enrichment(self) -> None:
+        """Manual word prompt requests morphology and a bilingual example."""
+        prompt = load_prompt("v1", "word_enrichment")
+        assert "{{word}}" in prompt
+        assert '"example"' in prompt
+        assert "supine" in prompt
+
     def test_load_nonexistent_raises(self) -> None:
         """Loading a nonexistent prompt raises FileNotFoundError."""
         with pytest.raises(FileNotFoundError, match="not found"):
@@ -43,6 +50,25 @@ class TestLoadPrompt:
         assert "adjective" in prompt.lower()
         assert "imperative" in prompt.lower()
         assert "supine" in prompt.lower()
+
+    def test_prompt_prioritizes_transferable_phrases(self) -> None:
+        """Phrase guidance distinguishes reusable frames from topical fragments."""
+        for name in ("sentence_analysis", "batch_sentence_analysis"):
+            prompt = load_prompt("v1", name)
+            assert "i vissa fall" in prompt
+            assert "ha kräftskiva" in prompt
+            assert "unrelated topics" in prompt
+
+    def test_analysis_prompts_reject_vocabulary_noise(self) -> None:
+        """Prompts exclude names, numeric facts, and adjective comparison cards."""
+        for name in ("sentence_analysis", "batch_sentence_analysis"):
+            prompt = load_prompt("v1", name).lower()
+            assert "people's names" in prompt or "names of people" in prompt
+            assert "standalone" in prompt and "years" in prompt
+            assert "proper nouns" in prompt
+            assert "comparative or superlative" in prompt
+            assert "positive base form" in prompt
+            assert "deduplicate" in prompt
 
 
 class TestRenderPrompt:

@@ -1,0 +1,12 @@
+Complete only the missing Swedish morphology fields for these vocabulary rows.
+
+Input JSON:
+{{items}}
+
+Return one JSON object: {"items":[{"id":1,"values":{"field":"value"}}]}.
+Include every input id exactly once. In "values", include only the field names
+listed in that input item's "missing" array. Use dictionary/base forms even if
+the input word is inflected. Use "—" when a standard form genuinely does not
+exist (for example, a mass noun without plural or an ungradable adjective).
+For verb group return an integer 1-4; all other values are strings. Do not add
+meanings, examples, explanations, or markdown.
